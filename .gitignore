@@ -1,0 +1,37 @@
+# ROS2 build/install/log directories
+build/
+install/
+log/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Compiled objects
+*.so
+*.o
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Official packages (don't include)
+turtlebot3_simulations/
+
+# Only include your custom packages
+!my_turtlebot_realFirst/
+!turtlebot_simulation_inout_linearization/
