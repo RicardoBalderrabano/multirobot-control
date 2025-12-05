@@ -1,0 +1,41 @@
+
+# Launch the empty world simulation
+ros2 launch turtlebot3_gazebo empty_world.launch.py
+
+TERMINAL 2
+
+source /opt/ros/jazzy/setup.bash
+source ~/turtlebot3_ws/install/setup.bash
+export TURTLEBOT3_MODEL=burger
+
+# Start teleoperation
+ros2 run turtlebot3_teleop teleop_keyboard
+
+TELEOP FOR ONE BURGER
+# Source your workspace
+source /opt/ros/jazzy/setup.bash
+source ~/turtlebot3_ws/install/setup.bash
+export TURTLEBOT3_MODEL=burger
+
+# Teleop for burger2 with namespace remapping
+ros2 run turtlebot3_teleop teleop_keyboard --ros-args -r /cmd_vel:=/burger2/cmd_vel
+
+
+RUN SIMULATION MULTIROBOTS
+cd ~/turtlebot3_ws
+colcon build --packages-select turtlebot_simulation_inout_linearization
+source install/setup.bash
+export TURTLEBOT3_MODEL=burger
+ros2 launch turtlebot_simulation_inout_linearization multi_robotFirst.launch.py
+
+RUN KILLING THE GAZEBO SIMULATION
+# Terminal 1 - Clean and launch
+pkill -f ros2; pkill -f gazebo; pkill -f gz
+source /opt/ros/jazzy/setup.bash
+source ~/turtlebot3_ws/install/setup.bash
+export TURTLEBOT3_MODEL=burger
+ros2 launch turtlebot_simulation_inout_linearization multi_robotFirst.launch.py
+
+
+# OBTAINING DATA POSITION FROM OPTITRACK
+ros2 run vrpn_mocap client_node --ros-args -p server:=192.168.1.100 -p port:=3883
