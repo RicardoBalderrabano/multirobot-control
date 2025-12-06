@@ -87,11 +87,13 @@ nav-msgs
 ### Simulation Setup
 ```bash
 # Clone and build
-git clone https://github.com/RicardoBalderrabano/InputOutput_LinearizationControl_Turlebot.git
+git clone https://github.com/RicardoBalderrabano/multirobot-control.git
 cd InputOutput_LinearizationControl_Turlebot
 colcon build --packages-select turtlebot_simulation_inout_linearization
 
 # Launch multi-robot simulation
+source ~/turtlebot3_ws/install/setup.bash
+export TURTLEBOT3_MODEL=burger
 ros2 launch turtlebot_simulation_inout_linearization multi_robotFirst.launch.py
 ```
 
