@@ -39,3 +39,11 @@ ros2 launch turtlebot_simulation_inout_linearization multi_robotFirst.launch.py
 
 # OBTAINING DATA POSITION FROM OPTITRACK
 ros2 run vrpn_mocap client_node --ros-args -p server:=192.168.1.100 -p port:=3883
+
+#RUN REAL CODE:
+colcon build --packages-select my_turtlebot_realFirst
+ros2 launch my_turtlebot_realFirst real_robotFirst.launch.py 
+
+#PUBLISH THE GOAL
+ros2 topic pub --once /burger1/robot_goal geometry_msgs/msg/Point "{x: 1.0, y: 1.0, z: 0.0}"
+
