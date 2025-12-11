@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """
-Input/Output Linearization Controller for TurtleBot3 with Point B Control
+Input/Output Linearization Controller for Point B
 
 CONTROLLER TYPE: Exact input/output linearization via feedback linearization
-CONTROL STRATEGY: Nonlinear cancellation and decoupling via Lie derivatives
-MODEL: Unicycle kinematics with controlled point at offset b from center
-MATHEMATICAL BASIS: 
-  - Output: y = [xB, yB]ᵀ = [x + b·cos(θ), y + b·sin(θ)]ᵀ
-  - Control law: u = G(θ)⁻¹ · (v - F(x)) where v is the desired linear dynamics
-  - Result: ẏ = v (linearized system)
+CONTROL OBJECTIVE: Drive Point B (ahead of robot) to a target coordinates (xB_goal, yB_goal)
+THEORY: Slides 3-6 (IOlincontrol.pdf)
 
 CONTROL LAW:
-  [v]   [cos(θ)  -b·sin(θ)]⁻¹ [xB_dot_desired + Kx·(xB_desired - xB)]
-  [ω] = [sin(θ)   b·cos(θ)]    [yB_dot_desired + Ky·(yB_desired - yB)]
-
-STABILITY: Globally asymptotically stable for Kx, Ky > 0
+  [v]   [cos(θ)   sin(θ)] [ ux ]
+  [ω] = [-sin(θ)/b cos(θ)/b] [ uy ]
+  
+  Where virtual inputs are:
+  ux = xB_dot_ref + Kx * (xB_ref - xB)
+  uy = yB_dot_ref + Ky * (yB_ref - yB)
 """
 
 import rclpy
@@ -25,176 +23,126 @@ from geometry_msgs.msg import Twist, Point
 from nav_msgs.msg import Odometry
 from tf_transformations import euler_from_quaternion
 
-
-class IOLinearizationController(Node):
+class IOLinearizationPointB(Node):
     def __init__(self):
-        super().__init__('io_linearization_controller')
+        super().__init__('io_linearization_point_b')
         
-        # Get parameters
+        # --- Parameters ---
         self.declare_parameter('robot_namespace', 'burger1')
-        self.declare_parameter('Kx', 2.0)  # Position gain for x
-        self.declare_parameter('Ky', 2.0)  # Position gain for y  
-        self.declare_parameter('b', 0.2)   # Distance from center to point B
+        self.declare_parameter('Kx', 1.0)  # Proportional gain for X
+        self.declare_parameter('Ky', 1.0)  # Proportional gain for Y
+        self.declare_parameter('b', 0.2)   # Distance from center to point B [cite: 25]
+        self.declare_parameter('goal_tolerance', 0.05)
         
-        self.robot_namespace = self.get_parameter('robot_namespace').value
+        self.ns = self.get_parameter('robot_namespace').value
         self.Kx = self.get_parameter('Kx').value
         self.Ky = self.get_parameter('Ky').value
         self.b = self.get_parameter('b').value
+        self.dist_tol = self.get_parameter('goal_tolerance').value
         
-        # Current state
+        # --- State ---
         self.x = 0.0
         self.y = 0.0
         self.theta = 0.0
         
-        # Point B state (offset from center)
+        # Point B current state
         self.xB = 0.0
         self.yB = 0.0
         
-        # Desired state
-        self.xB_desired = 0.0
-        self.yB_desired = 0.0
-        self.xB_dot_desired = 0.0
-        self.yB_dot_desired = 0.0
+        # Point B Goal state
+        self.xB_goal = 0.0
+        self.yB_goal = 0.0
+        self.goal_received = False
         
-        # Publishers and Subscribers
-        self.cmd_pub = self.create_publisher(
-            Twist, 
-            f'/{self.robot_namespace}/cmd_vel', 
-            10
-        )
+        # --- Communication ---
+        self.pub_cmd = self.create_publisher(Twist, f'/{self.ns}/cmd_vel', 10)
+        self.sub_odom = self.create_subscription(Odometry, f'/{self.ns}/odom', self.odom_callback, 10)
+        self.sub_goal = self.create_subscription(Point, f'/{self.ns}/robot_goal', self.goal_callback, 10)
         
-        self.odom_sub = self.create_subscription(
-            Odometry,
-            f'/{self.robot_namespace}/odom',
-            self.odom_callback,
-            10
-        )
-        
-        self.traj_sub = self.create_subscription(
-            Point,
-            f'/{self.robot_namespace}/pointB_desired_state',
-            self.traj_callback,
-            10
-        )
-        
-        # Control timer (50 Hz)
-        self.control_timer = self.create_timer(0.02, self.control_loop)
-        
-        self.get_logger().info(f'I/O Linearization Controller started for {self.robot_namespace}')
-        self.get_logger().info(f'Gains: Kx={self.Kx}, Ky={self.Ky}, b={self.b}')
-        
+        self.timer = self.create_timer(0.02, self.control_loop) # 50Hz
+
+        self.get_logger().info("I/O Linearization: Controlling Point B directly.")
+        self.get_logger().info(f"Offset b={self.b}m. Gains Kx={self.Kx}, Ky={self.Ky}")
+
     def odom_callback(self, msg):
-        # Get robot position
+        # 1. Get Robot State (x, y, theta)
         self.x = msg.pose.pose.position.x
         self.y = msg.pose.pose.position.y
         
-        # Get orientation from quaternion
-        orientation = msg.pose.pose.orientation
-        quaternion = [orientation.x, orientation.y, orientation.z, orientation.w]
+        rot = msg.pose.pose.orientation
+        (_, _, self.theta) = euler_from_quaternion([rot.x, rot.y, rot.z, rot.w])
         
-        try:
-            roll, pitch, yaw = euler_from_quaternion(quaternion)
-            self.theta = yaw
-        except Exception as e:
-            self.get_logger().error(f'Quaternion conversion error: {e}')
-            return
-        
-        # Calculate point B position (offset from center)
+        # 2. Compute Point B Position [cite: 26]
+        # xB = x + b*cos(theta)
+        # yB = y + b*sin(theta)
         self.xB = self.x + self.b * np.cos(self.theta)
         self.yB = self.y + self.b * np.sin(self.theta)
-        
-    def traj_callback(self, msg):
-        self.xB_desired = msg.x
-        self.yB_desired = msg.y
-        self.xB_dot_desired = msg.z  # x-velocity desired
-        self.yB_dot_desired = 0.0    # y-velocity desired (assume 0 for straight lines)
-        
-        self.get_logger().info(f'New target: B=({msg.x:.2f}, {msg.y:.2f})')
 
-    def compute_control(self):
-        """
-        Implement the exact I/O linearization control law:
-        
-        [v]   [cos(θ)  -b·sin(θ)]⁻¹ [xB_dot_desired + Kx·(xB_desired - xB)]
-        [ω] = [sin(θ)   b·cos(θ)]    [yB_dot_desired + Ky·(yB_desired - yB)]
-        
-        Matrix inverse simplifies to:
-        G(θ)⁻¹ = (1/b) · [[b·cos(θ), b·sin(θ)], [-sin(θ), cos(θ)]]
-        """
-        
-        # Calculate errors
-        e_x = self.xB_desired - self.xB
-        e_y = self.yB_desired - self.yB
-        
-        # Check if target is reached
-        distance = np.sqrt(e_x**2 + e_y**2)
-        if distance < 0.05:  # 5cm threshold
-            self.get_logger().info('Target reached!')
-            return 0.0, 0.0
-        
-        # Desired output dynamics (linear system)
-        u_x = self.xB_dot_desired + self.Kx * e_x
-        u_y = self.yB_dot_desired + self.Ky * e_y
-        
-        # DEBUG: Print control calculations
-        self.get_logger().info(
-            f'Errors: ({e_x:.3f}, {e_y:.3f}) | '
-            f'Desired dynamics: u_x={u_x:.3f}, u_y={u_y:.3f}',
-            throttle_duration_sec=1.0
-        )
-        
-        # Compute decoupling matrix inverse
-        # G(θ) = [[cos(θ), -b·sin(θ)], [sin(θ), b·cos(θ)]]
-        # G(θ)⁻¹ = (1/b) · [[b·cos(θ), b·sin(θ)], [-sin(θ), cos(θ)]]
-        det = self.b  # determinant = b·cos²(θ) + b·sin²(θ) = b
-        
-        # Apply control law: u = G(θ)⁻¹ · [u_x, u_y]ᵀ
-        v = (self.b * np.cos(self.theta) * u_x + self.b * np.sin(self.theta) * u_y) / det
-        omega = (-np.sin(self.theta) * u_x + np.cos(self.theta) * u_y) / det
-        
-        # Apply saturation limits for safety
-        v = np.clip(v, -0.15, 0.15)
-        omega = np.clip(omega, -1.0, 1.0)
-        
-        return v, omega
+    def goal_callback(self, msg):
+        # We interpret the incoming Point msg as the TARGET FOR POINT B directly.
+        # We do NOT calculate heading or robot center goals.
+        self.xB_goal = msg.x
+        self.yB_goal = msg.y
+        self.goal_received = True
+        self.get_logger().info(f"New Goal for B: ({self.xB_goal:.2f}, {self.yB_goal:.2f})")
 
     def control_loop(self):
-        try:
-            v, omega = self.compute_control()
-            
-            # Publish control commands
-            cmd_msg = Twist()
-            cmd_msg.linear.x = float(v)
-            cmd_msg.angular.z = float(omega)
-            self.cmd_pub.publish(cmd_msg)
-            
-            # Logging at reduced frequency
-            self.get_logger().info(
-                f'Control: v={v:.3f}, ω={omega:.3f} | '
-                f'Point B: ({self.xB:.2f}, {self.yB:.2f}) | '
-                f'Target B: ({self.xB_desired:.2f}, {self.yB_desired:.2f})',
-                throttle_duration_sec=1.0
-            )
-            
-        except Exception as e:
-            self.get_logger().error(f'Control error: {str(e)}')
+        if not self.goal_received:
+            return
+
+        # 1. Calculate Errors for Point B
+        ex = self.xB_goal - self.xB
+        ey = self.yB_goal - self.yB
+        dist_error = np.sqrt(ex**2 + ey**2)
+        
+        if dist_error < self.dist_tol:
+            self.stop_robot()
+            return
+
+        # 2. Linear Control Law (Virtual Inputs) 
+        # We assume a static goal (reference velocity = 0)
+        # ux = dot_xB* + Kx(xB* - xB) -> ux = Kx * ex
+        ux = self.Kx * ex
+        uy = self.Ky * ey
+        
+        # 3. Decoupling Matrix / Feedback Linearization 
+        # The inverse of the T matrix:
+        # v = ux*cos(theta) + uy*sin(theta)
+        # w = (-ux*sin(theta) + uy*cos(theta)) / b
+        
+        c_th = np.cos(self.theta)
+        s_th = np.sin(self.theta)
+        
+        v_cmd = ux * c_th + uy * s_th
+        w_cmd = (1.0 / self.b) * (-ux * s_th + uy * c_th)
+
+        # 4. Safety Saturation
+        v_cmd = np.clip(v_cmd, -0.22, 0.22)
+        w_cmd = np.clip(w_cmd, -2.0, 2.0)
+
+        # 5. Publish
+        twist = Twist()
+        twist.linear.x = float(v_cmd)
+        twist.angular.z = float(w_cmd)
+        self.pub_cmd.publish(twist)
+
+    def stop_robot(self):
+        twist = Twist()
+        self.pub_cmd.publish(twist)
 
 def main(args=None):
     rclpy.init(args=args)
-    controller = IOLinearizationController()
-    
+    node = IOLinearizationPointB()
     try:
-        rclpy.spin(controller)
+        rclpy.spin(node)
     except KeyboardInterrupt:
-        controller.get_logger().info('Controller shutdown by user')
+        node.stop_robot()
     finally:
-        controller.destroy_node()
+        node.destroy_node()
         rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
-
-
 
 '''
 #!/usr/bin/env python3

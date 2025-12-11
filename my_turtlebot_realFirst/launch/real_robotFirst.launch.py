@@ -78,7 +78,23 @@ def generate_launch_description():
         'robot_namespace',
         default_value='burger1',
         description='Namespace for the robot'
-    )
+    )ricardo@ricardo-LOQ:~$ ros2 topic list
+/burger1/battery_state
+/burger1/cmd_vel
+/burger1/imu
+/burger1/joint_states
+/burger1/magnetic_field
+/burger1/odom
+/burger1/pointB_desired_state
+/burger1/robot_description
+/burger1/scan
+/burger1/sensor_state
+/parameter_events
+/rosout
+/tb1/pose
+/tf
+/tf_static
+ricardo@rica
     
     # Single robot nodes
     trajectory_node = Node(
@@ -115,25 +131,6 @@ def generate_launch_description():
         controller_node,
     ])
 '''
-#!/usr/bin/env python3
-
-"""
-Multi-Robot TurtleBot3 Real Robot Launch File
-
-PURPOSE: Launches a complete multi-robot control system for real TurtleBot3 robots
-FEATURES: 
-  - Supports multiple real TurtleBot3 robots with proper namespace isolation
-  - Provides trajectory generation and I/O linearization control for autonomous navigation
-  - Safety features including velocity limits and emergency stop
-
-CONTROL SYSTEM:
-  - Input/Output Linearization: Mathematical exact linearization via feedback
-  - Point B Control: Controls point at offset b from robot center for stability
-  - Smooth Trajectories: 5th-order polynomial for continuous motion
-
-SAFETY: Velocity limits, trajectory timeout, emergency stop capability
-"""
-
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument
@@ -148,23 +145,23 @@ def generate_launch_description():
         description='Namespace for the robot'
     )
     
-    # Single robot nodes - REAL TURTLEBOT3
-    trajectory_node = Node(
-        package='my_turtlebot_realFirst',
-        executable='trajectory_generatorFirst',
-        output='screen',
-        name='trajectory_generator',
-        namespace=LaunchConfiguration('robot_namespace'),
-        parameters=[{
-            'robot_namespace': LaunchConfiguration('robot_namespace'),
-            'start_x': 0.0,
-            'start_y': 0.0,
-            'goal_x': 1.0,
-            'goal_y': 1.0,
-            'total_time': 10.0,
-            'max_velocity': 0.1
-        }]
-    )
+    # # Single robot nodes - REAL TURTLEBOT3
+    # trajectory_node = Node(
+    #     package='my_turtlebot_realFirst',
+    #     executable='trajectory_generatorFirst',
+    #     output='screen',
+    #     name='trajectory_generator',
+    #     namespace=LaunchConfiguration('robot_namespace'),
+    #     parameters=[{
+    #         'robot_namespace': LaunchConfiguration('robot_namespace'),
+    #         'start_x': 0.0,
+    #         'start_y': 0.0,
+    #         'goal_x': 1.0,
+    #         'goal_y': 1.0,
+    #         'total_time': 10.0,
+    #         'max_velocity': 0.1
+    #     }]
+    # )
     
     controller_node = Node(
         package='my_turtlebot_realFirst',
@@ -184,6 +181,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         robot_namespace,
-        trajectory_node,
+        #trajectory_node,
         controller_node,
     ])

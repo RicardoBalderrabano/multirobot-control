@@ -263,21 +263,21 @@ def generate_launch_description():
         output='screen'
     ))
 
-    ld.add_action(Node(
-        package='turtlebot_simulation_inout_linearization',
-        executable='sim_trajectory_generator',
-        name='burger1_trajectory',
-        namespace='burger1',
-        parameters=[{
-            'robot_namespace': 'burger1',
-            'start_x': 0.0,
-            'start_y': 0.0,
-            'goal_x': 1.0,
-            'goal_y': 1.0,
-            'total_time': 15.0,
-        }],
-        output='screen'
-    ))
+    # ld.add_action(Node(
+    #     package='turtlebot_simulation_inout_linearization',
+    #     executable='sim_trajectory_generator',
+    #     name='burger1_trajectory',
+    #     namespace='burger1',
+    #     parameters=[{
+    #         'robot_namespace': 'burger1',
+    #         'start_x': 0.0,
+    #         'start_y': 0.0,
+    #         'goal_x': 1.0,
+    #         'goal_y': 1.0,
+    #         'total_time': 15.0,
+    #     }],
+    #     output='screen'
+    # ))
 
     return ld
 
