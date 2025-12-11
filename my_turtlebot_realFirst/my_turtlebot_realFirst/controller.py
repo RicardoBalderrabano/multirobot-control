@@ -4,9 +4,8 @@ Input/Output Linearization Controller for Real TurtleBot3 (Point B Control)
 
 CONTROLLER TYPE: Exact input/output linearization
 CONTROL OBJECTIVE: Regulation of Point B to a target coordinate.
-THEORY: Slides 3-6 (IOlincontrol.pdf)
 
-UPDATES FOR REAL ROBOT:
+REAL ROBOT:
 - Uses TwistStamped
 - Implements safety velocity saturation
 - Checks for valid Odometry before controlling
@@ -112,7 +111,6 @@ class IOLinearizationReal(Node):
             return
 
         # Directly map input message to Point B goal
-        # We do NOT calculate heading or project from center
         self.xB_goal = msg.x
         self.yB_goal = msg.y
         self.has_goal = True
@@ -135,12 +133,12 @@ class IOLinearizationReal(Node):
             self.get_logger().info(f"Goal Reached. Final Error: {dist_error:.3f}m")
             return
 
-        # 3. Virtual Inputs (Slide 5)
+        # 3. Virtual Inputs
         # We assume a static goal point, so velocity feedforward is 0
         ux = self.Kx * ex
         uy = self.Ky * ey
 
-        # 4. Decoupling Matrix (Slide 3/6)
+        # 4. Decoupling Matrix 
         # v = ux*cos(theta) + uy*sin(theta)
         # w = (-ux*sin(theta) + uy*cos(theta)) / b
         c_th = np.cos(self.theta)

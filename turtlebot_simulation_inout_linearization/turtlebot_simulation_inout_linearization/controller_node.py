@@ -4,7 +4,6 @@ Input/Output Linearization Controller for Point B
 
 CONTROLLER TYPE: Exact input/output linearization via feedback linearization
 CONTROL OBJECTIVE: Drive Point B (ahead of robot) to a target coordinates (xB_goal, yB_goal)
-THEORY: Slides 3-6 (IOlincontrol.pdf)
 
 CONTROL LAW:
   [v]   [cos(θ)   sin(θ)] [ ux ]
@@ -72,7 +71,7 @@ class IOLinearizationPointB(Node):
         rot = msg.pose.pose.orientation
         (_, _, self.theta) = euler_from_quaternion([rot.x, rot.y, rot.z, rot.w])
         
-        # 2. Compute Point B Position [cite: 26]
+        # 2. Compute Point B Position 
         # xB = x + b*cos(theta)
         # yB = y + b*sin(theta)
         self.xB = self.x + self.b * np.cos(self.theta)
@@ -80,7 +79,6 @@ class IOLinearizationPointB(Node):
 
     def goal_callback(self, msg):
         # We interpret the incoming Point msg as the TARGET FOR POINT B directly.
-        # We do NOT calculate heading or robot center goals.
         self.xB_goal = msg.x
         self.yB_goal = msg.y
         self.goal_received = True
