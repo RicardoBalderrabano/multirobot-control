@@ -21,7 +21,7 @@ class IOLinearizationOptitrack(Node):
         super().__init__('io_linearization_optitrack')
         
         # --- Parameters ---
-        self.declare_parameter('robot_namespace', 'burger1')
+        self.declare_parameter('robot_namespace', 't1')
         self.declare_parameter('pose_topic', '/tb1/pose')
         self.declare_parameter('Kx', 1.5)
         self.declare_parameter('Ky', 1.5)
@@ -113,7 +113,7 @@ class IOLinearizationOptitrack(Node):
         current_time = self.get_clock().now().nanoseconds / 1e9
         
         # SAFETY CHECK: Increased timeout to 2.0 seconds
-        if self.pose_received and (current_time - self.last_pose_time) > 2.0:
+        if self.pose_received and (current_time - self.last_pose_time) > 5.0:
             self.get_logger().warn(f"TIMEOUT: Last data was {current_time - self.last_pose_time:.1f}s ago", throttle_duration_sec=1.0)
             self.stop_robot()
             return
