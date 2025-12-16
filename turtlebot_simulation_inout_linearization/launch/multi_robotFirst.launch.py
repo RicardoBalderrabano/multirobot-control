@@ -72,28 +72,30 @@ def _make_namespaced_sdf(original_sdf_path, namespace):
     # Also replace model name
     sdf_content = sdf_content.replace('__model__', namespace)
 
+    # =========================================================
+    # !!! ADDED: INJECT GROUND TRUTH POSE PLUGIN !!!
+    # =========================================================
+    # We configure it to ONLY publish the main model pose to prevent crashes/overhead
+    pose_plugin = f"""
+    <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_sensor_pose>false</publish_sensor_pose>
+        <publish_collision_pose>false</publish_collision_pose>
+        <publish_visual_pose>false</publish_visual_pose>
+        <publish_nested_model_pose>true</publish_nested_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>20</update_frequency>
+    </plugin>
+    </model>"""
+    
+    # Insert the plugin before the closing </model> tag
+    if '</model>' in sdf_content:
+        sdf_content = sdf_content.replace('</model>', pose_plugin)
+        print(f"INJECTED POSE_PUBLISHER PLUGIN FOR {namespace}")
+    # =========================================================
+
     # DEBUG: Print the fixed diff_drive plugin section
-    print(f"=== CHECKING FIXED DIFFDRIVE PLUGIN FOR {namespace} ===")
-    start = sdf_content.find('<plugin filename="gz-sim-diff-drive-system"')
-    if start != -1:
-        end = sdf_content.find('</plugin>', start) + len('</plugin>')
-        plugin_section = sdf_content[start:end]
-        print("DIFFDRIVE PLUGIN CONTENT:")
-        print(plugin_section)
-        
-        # Check if our fixes were applied
-        if f'/model/{namespace}/odometry' in plugin_section:
-            print(f"ODOMETRY TOPIC SUCCESSFULLY SET TO: /model/{namespace}/odometry")
-        else:
-            print("ODOMETRY TOPIC NOT SET CORRECTLY")
-            
-        if f'/model/{namespace}/cmd_vel' in plugin_section:
-            print(f"CMD_VEL TOPIC SUCCESSFULLY SET TO: /model/{namespace}/cmd_vel")
-        else:
-            print("CMD_VEL TOPIC NOT SET CORRECTLY")
-    else:
-        print("DIFFDRIVE PLUGIN NOT FOUND")
-    print("=========================================")
+    # ... (You can keep your existing debug prints here) ...
 
     tmp_sdf = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.sdf')
     tmp_sdf.write(sdf_content)
@@ -121,7 +123,6 @@ def _make_namespaced_bridge_yaml(original_yaml_path, namespace):
             
             if gz_topic == "cmd_vel":
                 new_entry['gz_topic_name'] = f"/model/{namespace}/cmd_vel"
-                # CRITICAL: Ensure cmd_vel is bidirectional
                 new_entry['direction'] = 'BIDIRECTIONAL'
             elif gz_topic == "odom":
                 new_entry['gz_topic_name'] = f"/model/{namespace}/odometry"
@@ -134,61 +135,164 @@ def _make_namespaced_bridge_yaml(original_yaml_path, namespace):
             elif gz_topic == "scan":
                 new_entry['gz_topic_name'] = f"/{namespace}/scan"
 
-        # Ensure cmd_vel uses Twist (not TwistStamped)
+        # Ensure cmd_vel uses Twist
         if 'ros_topic_name' in new_entry and 'cmd_vel' in new_entry['ros_topic_name']:
             if 'ros_type_name' in new_entry:
                 new_entry['ros_type_name'] = 'geometry_msgs/msg/Twist'
 
         namespaced_config.append(new_entry)
 
-    # Debug output
-    print(f"=== FINAL BRIDGE CONFIG FOR {namespace} ===")
-    for entry in namespaced_config:
-        direction = entry.get('direction', 'NOT_SET')
-        print(f"ROS: {entry.get('ros_topic_name')} -> GZ: {entry.get('gz_topic_name')} (Dir: {direction})")
-    print("=========================================")
+    # =========================================================
+    # !!! ADDED: BRIDGE ENTRY FOR GROUND TRUTH !!!
+    # =========================================================
+    ground_truth_entry = {
+        'ros_topic_name': f'/{namespace}/ground_truth_pose',
+        'gz_topic_name': f'/model/{namespace}/pose',
+        'gz_type_name': 'gz.msgs.Pose',
+        'ros_type_name': 'geometry_msgs/msg/PoseStamped',
+        'direction': 'GZ_TO_ROS'
+    }
+    namespaced_config.append(ground_truth_entry)
+    print(f"ADDED GROUND TRUTH BRIDGE: {ground_truth_entry['gz_topic_name']} -> {ground_truth_entry['ros_topic_name']}")
+    # =========================================================
+
+    # ... (Keep the rest of your debug prints and file saving logic) ...
+    
+    tmp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.yaml')
+    yaml.dump(namespaced_config, tmp_file)
+    tmp_file.close()
+    return tmp_file.name
+    
+#!/usr/bin/env python3
+
+import os
+import yaml
+import tempfile
+
+from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription
+from launch.substitutions import LaunchConfiguration
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch_ros.actions import Node, PushRosNamespace
+from launch.actions import GroupAction
+
+from ament_index_python.packages import get_package_share_directory
+
+# ... [Keep your _make_namespaced_sdf function exactly as we fixed it before] ...
+def _make_namespaced_sdf(original_sdf_path, namespace):
+    with open(original_sdf_path, 'r') as f:
+        sdf_content = f.read()
+
+    replacements = {
+        '<odom_topic>odom</odom_topic>': f'<odom_topic>/model/{namespace}/odometry</odom_topic>',
+        '<frame_id>odom</frame_id>': f'<odom_frame>odom</odom_frame>',
+        '<child_frame_id>base_footprint</child_frame_id>': f'<robot_base_frame>base_footprint</robot_base_frame>',
+        '<topic>cmd_vel</topic>': f'<topic>/model/{namespace}/cmd_vel</topic>'
+    }
+    
+    for old, new in replacements.items():
+        sdf_content = sdf_content.replace(old, new)
+
+    sdf_content = sdf_content.replace('__model__', namespace)
+
+    # INJECT GROUND TRUTH POSE PLUGIN
+    pose_plugin = f"""
+    <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_link_pose>false</publish_link_pose>
+        <publish_sensor_pose>false</publish_sensor_pose>
+        <publish_collision_pose>false</publish_collision_pose>
+        <publish_visual_pose>false</publish_visual_pose>
+        <publish_nested_model_pose>true</publish_nested_model_pose>
+        <use_pose_vector_msg>false</use_pose_vector_msg>
+        <update_frequency>20</update_frequency>
+    </plugin>
+    </model>"""
+    
+    if '</model>' in sdf_content:
+        sdf_content = sdf_content.replace('</model>', pose_plugin)
+
+    tmp_sdf = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.sdf')
+    tmp_sdf.write(sdf_content)
+    tmp_sdf.close()
+    return tmp_sdf.name
+
+# ... [Keep your _make_namespaced_bridge_yaml function exactly as we fixed it before] ...
+def _make_namespaced_bridge_yaml(original_yaml_path, namespace):
+    with open(original_yaml_path, 'r') as f:
+        bridge_config = yaml.safe_load(f)
+
+    namespaced_config = []
+    for entry in bridge_config:
+        new_entry = entry.copy()
+
+        if 'ros_topic_name' in new_entry:
+            ros_topic = new_entry['ros_topic_name'].lstrip('/')
+            new_entry['ros_topic_name'] = f"/{namespace}/{ros_topic}"
+
+        if 'gz_topic_name' in new_entry:
+            gz_topic = new_entry['gz_topic_name']
+            if gz_topic == "cmd_vel":
+                new_entry['gz_topic_name'] = f"/model/{namespace}/cmd_vel"
+                new_entry['direction'] = 'BIDIRECTIONAL'
+            elif gz_topic == "odom":
+                new_entry['gz_topic_name'] = f"/model/{namespace}/odometry"
+            elif gz_topic == "tf":
+                new_entry['gz_topic_name'] = f"/world/default/pose/info"
+            elif gz_topic == "joint_states":
+                new_entry['gz_topic_name'] = f"/world/default/model/{namespace}/joint_state"
+            elif gz_topic == "imu":
+                new_entry['gz_topic_name'] = f"/{namespace}/imu"
+            elif gz_topic == "scan":
+                new_entry['gz_topic_name'] = f"/{namespace}/scan"
+
+        if 'ros_topic_name' in new_entry and 'cmd_vel' in new_entry['ros_topic_name']:
+            if 'ros_type_name' in new_entry:
+                new_entry['ros_type_name'] = 'geometry_msgs/msg/Twist'
+
+        namespaced_config.append(new_entry)
+
+    # ADD GROUND TRUTH BRIDGE ENTRY
+    ground_truth_entry = {
+        'ros_topic_name': f'/{namespace}/ground_truth_pose',
+        'gz_topic_name': f'/model/{namespace}/pose',
+        'gz_type_name': 'gz.msgs.Pose',
+        'ros_type_name': 'geometry_msgs/msg/PoseStamped',
+        'direction': 'GZ_TO_ROS'
+    }
+    namespaced_config.append(ground_truth_entry)
 
     tmp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.yaml')
     yaml.dump(namespaced_config, tmp_file)
     tmp_file.close()
     return tmp_file.name
 
+
 def generate_launch_description():
-    # --- Launch configs ---
     use_sim_time = LaunchConfiguration('use_sim_time', default='true')
 
-    # --- Package paths ---
     try:
         tb3_gazebo_dir = get_package_share_directory('turtlebot3_gazebo')
-    except PackageNotFoundError:
-        # Fallback to your workspace installation
+    except Exception:
         tb3_gazebo_dir = os.path.join(os.path.expanduser('~'), 'turtlebot3_ws/install/turtlebot3_gazebo/share/turtlebot3_gazebo')
 
     try:
         ros_gz_sim_dir = get_package_share_directory('ros_gz_sim')
-    except PackageNotFoundError:
-        # For ROS 2 Jazzy, it might be named differently
+    except Exception:
         ros_gz_sim_dir = get_package_share_directory('ros_gz_sim')
-    # --- World file ---
-    world_file = os.path.join(tb3_gazebo_dir, 'worlds', 'empty_world.world')
 
-    # --- TurtleBot3 model ---
+    world_file = os.path.join(tb3_gazebo_dir, 'worlds', 'empty_world.world')
     turtlebot_model_dir = os.path.join(tb3_gazebo_dir, 'models', 'turtlebot3_burger')
     model_sdf_path = os.path.join(turtlebot_model_dir, 'model.sdf')
-
-    # --- Original bridge YAML ---
     bridge_yaml_path = os.path.join(tb3_gazebo_dir, 'params', 'turtlebot3_burger_bridge.yaml')
 
-    # --- Robots definition ---
     robots = [
         {'name': 'burger1', 'x': 0.0, 'y': 0.0},
-        {'name': 'burger2', 'x': 10.0, 'y': 10.0},
-        {'name': 'burger3', 'x': -10.0, 'y': -10.0},
+        {'name': 'burger2', 'x': 0.0, 'y': 1.0},
+        {'name': 'burger3', 'x': 0.0, 'y': -1.0},
     ]
 
     ld = LaunchDescription()
 
-    # --- Gazebo server ---
     gzserver_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(ros_gz_sim_dir, 'launch', 'gz_sim.launch.py')
@@ -200,7 +304,6 @@ def generate_launch_description():
     )
     ld.add_action(gzserver_launch)
 
-    # --- Gazebo client ---
     gzclient_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(ros_gz_sim_dir, 'launch', 'gz_sim.launch.py')
@@ -209,20 +312,17 @@ def generate_launch_description():
     )
     ld.add_action(gzclient_launch)
 
-    # --- Spawn robots ---
+    # --- Spawn robots AND Controllers ---
     for robot in robots:
         ns = robot['name']
 
-        # Patch bridge YAML
         bridge_yaml_namespaced = _make_namespaced_bridge_yaml(bridge_yaml_path, ns)
-
-        # Patch SDF for this robot (only topic, plugin name stays same)
         namespaced_sdf = _make_namespaced_sdf(model_sdf_path, ns)
 
         robot_group = GroupAction([
             PushRosNamespace(ns),
 
-            # Spawn robot in Gazebo with patched SDF
+            # 1. Spawn Robot
             Node(
                 package='ros_gz_sim',
                 executable='create',
@@ -237,7 +337,7 @@ def generate_launch_description():
                 output='screen'
             ),
 
-            # ROS-Gazebo bridge
+            # 2. Bridge
             Node(
                 package='ros_gz_bridge',
                 executable='parameter_bridge',
@@ -245,39 +345,23 @@ def generate_launch_description():
                 parameters=[{'config_file': bridge_yaml_namespaced}],
                 output='screen'
             ),
+            
+            # 3. CONTROLLER NODE (Now inside the loop!)
+            Node(
+                package='turtlebot_simulation_inout_linearization',
+                executable='sim_controller',
+                name=f'{ns}_controller',
+                namespace=ns,
+                parameters=[{
+                    'robot_namespace': ns,
+                    'pose_topic': 'ground_truth_pose',
+                    'Kx': 2.0,
+                    'Ky': 2.0,
+                    'b': 0.2,
+                }],
+                output='screen'
+            )
         ])
         ld.add_action(robot_group)
 
-        # --- Add controller for burger1 ---
-    ld.add_action(Node(
-        package='turtlebot_simulation_inout_linearization',
-        executable='sim_controller',
-        name='burger1_controller',
-        namespace='burger1',
-        parameters=[{
-            'robot_namespace': 'burger1',
-            'Kx': 2.0, 
-            'Ky': 2.0,
-            'b': 0.2, 
-        }],
-        output='screen'
-    ))
-
-    # ld.add_action(Node(
-    #     package='turtlebot_simulation_inout_linearization',
-    #     executable='sim_trajectory_generator',
-    #     name='burger1_trajectory',
-    #     namespace='burger1',
-    #     parameters=[{
-    #         'robot_namespace': 'burger1',
-    #         'start_x': 0.0,
-    #         'start_y': 0.0,
-    #         'goal_x': 1.0,
-    #         'goal_y': 1.0,
-    #         'total_time': 15.0,
-    #     }],
-    #     output='screen'
-    # ))
-
     return ld
-

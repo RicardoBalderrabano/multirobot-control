@@ -141,9 +141,22 @@ class IOLinearizationOptitrack(Node):
         v_cmd = u_x * c_th + u_y * s_th
         w_cmd = (1.0 / self.b) * (-u_x * s_th + u_y * c_th)
 
-        # Saturation
-        v_cmd = np.clip(v_cmd, -self.max_v, self.max_v)
-        w_cmd = np.clip(w_cmd, -self.max_w, self.max_w)
+        #Saturation (SCALING METHOD)
+        # Check if v or w exceed their limits
+        scale_v = 1.0
+        scale_w = 1.0
+        
+        if abs(v_cmd) > self.max_v:
+            scale_v = self.max_v / abs(v_cmd)
+            
+        if abs(w_cmd) > self.max_w:
+            scale_w = self.max_w / abs(w_cmd)
+            
+        # Apply the strictest scaling factor to BOTH to preserve trajectory shape
+        scale = min(scale_v, scale_w)
+        
+        v_cmd = v_cmd * scale
+        w_cmd = w_cmd * scale
 
         msg = TwistStamped()
         msg.header.stamp = self.get_clock().now().to_msg()

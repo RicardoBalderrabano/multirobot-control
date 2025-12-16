@@ -3,33 +3,33 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Point
 
-class FleetCommander(Node):
+class SimFleetCommander(Node):
     def __init__(self):
-        super().__init__('fleet_commander')
+        super().__init__('sim_fleet_commander')
         
-        # 1. Define your fleet (Must match the names in your Launch File)
-        self.robot_list = ['tb1', 'tb2', 'tb3']
+        # 1. Match the names in your launch file
+        self.robot_list = ['burger1', 'burger2', 'burger3']
         
-        # 2. Define goals for each robot (x, y)
+        # 2. Define goals (Make sure they are within the empty world bounds)
         self.goals = {
-            'tb1': (0.0, 0.0),
-            'tb2': (0.0, 1.0),
-            'tb3': (0.0, -1.0),
-        
+            'burger1': (0.0, 0.0),
+            'burger2': (0.0, 1.0),   # Moving from 10,10 to 8,8
+            'burger3': (0.0, -1.0), # Moving from -10,-10 to -8,-8
         }
         
         self.publishers_ = {}
 
-        # 3. Create a publisher for each robot
+        # 3. Create publishers
         for robot_name in self.robot_list:
             topic_name = f'/{robot_name}/robot_goal'
             self.publishers_[robot_name] = self.create_publisher(Point, topic_name, 10)
-            self.get_logger().info(f'Registered commander for: {topic_name}')
+            self.get_logger().info(f'Commander ready for: {topic_name}')
 
-        # 4. Wait briefly for connections, then send
-        self.timer = self.create_timer(1.0, self.send_goals)
+        # 4. Wait 2 seconds to ensure connections, then send
+        self.timer = self.create_timer(2.0, self.send_goals)
 
     def send_goals(self):
+        self.get_logger().info("--- SENDING GOALS ---")
         for robot_name, (gx, gy) in self.goals.items():
             if robot_name in self.publishers_:
                 msg = Point()
@@ -38,16 +38,16 @@ class FleetCommander(Node):
                 msg.z = 0.0
                 
                 self.publishers_[robot_name].publish(msg)
-                self.get_logger().info(f'Sent goal {gx, gy} to {robot_name}')
+                self.get_logger().info(f'>> Sent {robot_name} to ({gx}, {gy})')
         
-        # Shut down after sending once
+        self.get_logger().info("---------------------")
+        # Exit after sending
         self.timer.cancel()
-        self.get_logger().info("All goals sent. Shutting down.")
         raise SystemExit
 
 def main(args=None):
     rclpy.init(args=args)
-    node = FleetCommander()
+    node = SimFleetCommander()
     try:
         rclpy.spin(node)
     except SystemExit:

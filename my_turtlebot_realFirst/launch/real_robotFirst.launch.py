@@ -61,7 +61,7 @@ def generate_launch_description():
     # --- CONFIGURATION ---
     # List the names of all your robots here. 
     # This is the only place you need to edit to add/remove robots.
-    robot_list = ['tb1', 'tb3', 'tb6'] 
+    robot_list = ['tb1', 'tb2', 'tb3'] 
     
     # Controller Parameters (Common to all robots)
     common_params = {

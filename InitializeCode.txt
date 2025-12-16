@@ -47,3 +47,8 @@ ros2 launch my_turtlebot_realFirst real_robotFirst.launch.py
 #PUBLISH THE GOAL
 ros2 topic pub --once /burger1/robot_goal geometry_msgs/msg/Point "{x: 1.0, y: 1.0, z: 0.0}"
 
+# RUN FLEET IN REAL 
+ros2 run my_turtlebot_realFirst fleet_commander
+
+#rRUN FLEET FOR SIMULATION
+python3 fleet_launcher.py
