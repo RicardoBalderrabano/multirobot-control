@@ -25,6 +25,7 @@ setup(
             'trajectory_generatorFirst = my_turtlebot_realFirst.trajectory_generatorFirst:main',
             'optitrack_bridge_node = my_turtlebot_realFirst.optitrack_bridge_node:main',
             'fleet_commander = my_turtlebot_realFirst.fleet_commander:main',
+            'simple_tracker = my_turtlebot_realFirst.simple_tracker:main',
         ],
     },
 )

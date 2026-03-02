@@ -1,0 +1,29 @@
+#my_test_static: 
+1 robot behind and diagonal approx 70 cm.
+#my_test_static2
+2 robots in diagonal approx 70 cm (front the robot)
+#my_test_static3
+2 robots lateral, 1 meter distance
+#my_test_static4
+1 robot in front 50 cm, and one lateral left 1 m
+#my_test_static5
+2 robots behind 60 cm, separated by 30 cm
+#my_test_static6
+robots in diagonal, 1 30 cm, other 60 cm, forming a line.
+#my_test_static7_noise
+1 robot behind and other lateral left 60 cm, walking person.
+#my_test_active1
+robot lidar moving in scquare around 1 m to 80 cm to a static robot
+#my_test_active2
+Robot lidar stati, robot moving a 60-80cm away, first rotating and then moving in square, last time doing wrong movements.
+#my_test_active3
+robot lidar static, robot moving, first 120 cm ahead, then approaching to 15 cm and wait, then return to 40 cm and turn on its axis to go a head 120 cm.
+#my_test_active4
+robot lidar static, 1 robot static in diagonal 70 cm, 1 robot moving from 1 cm in square, pass behinf the robot 1.
+#my_test_active5
+robot lidar moving forward and moving 2 moving forward in the same direction parallel, 60 cm 
+
+
+
+
+

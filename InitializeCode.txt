@@ -52,3 +52,15 @@ ros2 run my_turtlebot_realFirst fleet_commander
 
 #rRUN FLEET FOR SIMULATION
 python3 fleet_launcher.py
+
+
+
+# RUN ROSBAGS
+export TURTLEBOT3_MODEL=burger
+# Replace 'my_test_data' with your actual bag folder name
+ros2 bag play my_test_data --loop --clock
+
+# RUN TRACKER
+colcon build --packages-select my_turtlebot_realFirst
+ros2 run my_turtlebot_realFirst simple_tracker
+
