@@ -1,0 +1,16 @@
+sudo nano /usr/local/bin/wifi-fix.sh
+
+pase this:
+#!/bin/bash
+sleep 10
+/usr/sbin/iw dev wlan0 set power_save off
+
+make it executable:
+sudo chmod +x /usr/local/bin/wifi-fix.sh
+
+open:
+sudo crontab -e
+@reboot /usr/local/bin/wifi-fix.sh
+
+bash
+sudo iw dev wlan0 set power_save off
