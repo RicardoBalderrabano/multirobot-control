@@ -37,9 +37,9 @@ class KalmanObserver(Node):
         
         # --- 1. State Setup ---
         # Initial relative position of TB3 as seen by TB1
-        self.state_x = 0.39
+        self.state_x = 0.42
         self.state_y = 0.006
-        self.init_theta = 3.1 # Relative moving angle (Orientation)
+        self.init_theta = -3.13 # Relative moving angle (Orientation)
         
         # --- 2. Filter Gains ---
         self.p_matrix = 0.01             # Initial State Covariance 
@@ -54,7 +54,7 @@ class KalmanObserver(Node):
         self.true_x, self.true_y = self.state_x, self.state_y
 
         # --- 3. Logging Setup ---
-        self.csv_filename = 'tracking_results_with_optitrack35.csv'
+        self.csv_filename = 'tracking_results_with_optitrack36.csv'
         self.init_csv()
         
         # Publishers/Subscribers

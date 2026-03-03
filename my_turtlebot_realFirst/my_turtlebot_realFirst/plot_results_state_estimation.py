@@ -155,8 +155,8 @@ def plot_trajectories(csv_file):
     print(f"Raw Odometry RMSE:  {rmse_odom:.4f} meters")
     print(f"Improvement:        {((rmse_odom - rmse_kf) / rmse_odom * 100):.1f}%")
 
-    plt.savefig('final_tracking_with_footprint35.png', dpi=300)
+    plt.savefig('final_tracking_with_footprint36.png', dpi=300)
     plt.show()
 
 if __name__ == "__main__":
-    plot_trajectories('tracking_results_with_optitrack35.csv')
+    plot_trajectories('tracking_results_with_optitrack36.csv')
