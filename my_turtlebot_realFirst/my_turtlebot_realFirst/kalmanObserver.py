@@ -57,7 +57,7 @@ class KalmanObserver(Node):
         self.create_subscription(LaserScan, '/tb1/scan', self.lidar_callback, qos_lidar)
 
         # --- 4. Logging ---
-        self.csv_filename = 'global_tracking_comparison12.csv'
+        self.csv_filename = 'tracking_dbscan2.csv'
         self.init_csv()
 
     # --- CALLBACKS ---
