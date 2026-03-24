@@ -414,7 +414,7 @@ class KalmanObserver(Node):
         self.ts.registerCallback(self.sync_lidar_callback)
 
         # Logging
-        self.csv_filename = 'tracking_dbscan22.csv'
+        self.csv_filename = 'tracking_dbscan37.csv'
         self.gt_tb1_x, self.gt_tb1_y, self.gt_tb3_x, self.gt_tb3_y = 0.0, 0.0, 0.0, 0.0
         self.init_csv()
         self.get_logger().info("Kalman Filter running with Message Filters Synchronization!")

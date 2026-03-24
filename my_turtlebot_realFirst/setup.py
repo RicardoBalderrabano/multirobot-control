@@ -10,7 +10,11 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', ['launch/real_robotFirst.launch.py']),
+        # Added your new launch file to the list below so ROS can find it
+        ('share/' + package_name + '/launch', [
+            'launch/real_robotFirst.launch.py',
+            'launch/filter_playback.launch.py' 
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -26,6 +30,9 @@ setup(
             'optitrack_bridge_node = my_turtlebot_realFirst.optitrack_bridge_node:main',
             'fleet_commander = my_turtlebot_realFirst.fleet_commander:main',
             'simple_tracker = my_turtlebot_realFirst.simple_tracker:main',
+            # --- NEW NODES ADDED BELOW ---
+            'multi_global_transformer = my_turtlebot_realFirst.global_pose:main',
+            'kalman_observer = my_turtlebot_realFirst.kalmanObserver_v2:main',
         ],
     },
 )

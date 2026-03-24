@@ -51,4 +51,4 @@ def plot_benchmarking_results(csv_file):
     plt.show()
 
 if __name__ == "__main__":
-    plot_benchmarking_results('tracking_dbscan22.csv')
+    plot_benchmarking_results('tracking_dbscan37.csv')
