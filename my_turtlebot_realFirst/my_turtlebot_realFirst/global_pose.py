@@ -73,7 +73,7 @@ class MultiGlobalTransformer(Node):
         self.create_subscription(PoseStamped, f'/{robot_id}/pose', 
             lambda msg, rid=robot_id: self.opti_callback(msg, rid), qos_best_effort)
         
-        self.create_subscription(Odometry, f'/{robot_id}/odometry/filtered', 
+        self.create_subscription(Odometry, f'/{robot_id}/odom', 
             lambda msg, rid=robot_id: self.ekf_callback(msg, rid), 10)
         
         pub = self.create_publisher(PoseStamped, f'/{robot_id}/global_pose_estimated', 10)
