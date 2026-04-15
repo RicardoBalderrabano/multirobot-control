@@ -286,9 +286,9 @@ def generate_launch_description():
     bridge_yaml_path = os.path.join(tb3_gazebo_dir, 'params', 'turtlebot3_burger_bridge.yaml')
 
     robots = [
-        {'name': 'burger1', 'x': 0.0, 'y': 0.0},
-        {'name': 'burger2', 'x': 0.0, 'y': 1.0},
-        {'name': 'burger3', 'x': 0.0, 'y': -1.0},
+        {'name': 'tb1', 'x': 5.0, 'y': 5.0},
+        {'name': 'tb2', 'x': 0.0, 'y': 10.0},
+        {'name': 'tb3', 'x': -5.0, 'y': -5.0},
     ]
 
     ld = LaunchDescription()

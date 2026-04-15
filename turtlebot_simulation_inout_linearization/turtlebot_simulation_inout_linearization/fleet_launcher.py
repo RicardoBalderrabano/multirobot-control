@@ -8,13 +8,13 @@ class SimFleetCommander(Node):
         super().__init__('sim_fleet_commander')
         
         # 1. Match the names in your launch file
-        self.robot_list = ['burger1', 'burger2', 'burger3']
+        self.robot_list = ['tb1', 'tb2', 'tb3']
         
         # 2. Define goals (Make sure they are within the empty world bounds)
         self.goals = {
-            'burger1': (0.0, 0.0),
-            'burger2': (0.0, 1.0),   # Moving from 10,10 to 8,8
-            'burger3': (0.0, -1.0), # Moving from -10,-10 to -8,-8
+            'tb1': (5.0, 0.0),
+            'tb2': (3.0, 0.0),   # Moving from 10,10 to 8,8
+            'tb3': (0.0, -1.0), # Moving from -10,-10 to -8,-8
         }
         
         self.publishers_ = {}
