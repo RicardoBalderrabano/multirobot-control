@@ -1,3 +1,4 @@
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
@@ -23,16 +24,19 @@ class MultiKalmanObserver(Node):
         # --- EKF Gains & Tuning ---
         # Q (Process Noise): 3x3 matrix for [x, y, theta]
         self.q_base = np.diag([0.2, 0.2, 0.1])        
-        # R (Measurement Noise): 2x2 matrix because LiDAR only gives [x, y]
-        self.r_meas = np.diag([0.15, 0.15])         
         self.ema_alpha = 0.4       
         
-        # --- Dynamic Gating Parameters ---
-        self.gate_threshold = 0.10  
-        self.gate_expansion = 0.05  
-        self.max_gate = 0.40        
+        # --- ADAPTIVE EKF: Dynamic Measurement Noise Parameters ---
+        self.r_meas_base = 0.15       # Clean line-of-sight noise
+        self.r_meas_expansion = 0.4   # Penalty per missed frame
+        self.r_meas_max = 2.0         # Hard cap for maximum measurement distrust
         
-        self.get_logger().info("--- STARTING ROBOT DISCOVERY (EKF MODE) ---")
+        # --- Dynamic Gating Parameters ---
+        self.gate_threshold = 0.10  # Strict base gate: 10cm
+        self.gate_expansion = 0.02  # Expand slowly: 2cm per missed frame
+        self.max_gate = 0.15        # Hard cap: Reject ghost clusters jumping > 15cm
+        
+        self.get_logger().info("--- STARTING ROBOT DISCOVERY (ANNEALED ADAPTIVE EKF) ---")
         time.sleep(1.0) 
         self.discover_fleet_once()
         self.init_unified_csv()
@@ -154,7 +158,10 @@ class MultiKalmanObserver(Node):
             if (dx * math.cos(t['last_odom_theta']) + dy * math.sin(t['last_odom_theta'])) < 0:
                 ds = -ds
                 
-            dtheta = new_theta - t['last_odom_theta']
+            raw_dtheta = new_theta - t['last_odom_theta']
+            
+            # Safely wrap the angle delta to [-pi, pi]
+            dtheta = math.atan2(math.sin(raw_dtheta), math.cos(raw_dtheta))
 
             # --- 1. EKF Non-Linear State Prediction ---
             t['x'] += ds * math.cos(t['theta'])
@@ -215,32 +222,41 @@ class MultiKalmanObserver(Node):
                 updated_robots.add(rid)
                 
                 t = self.trackers[rid]
-                t['missed_frames'] = 0  
                 best_gx, best_gy = match['gx'], match['gy']
                 
                 if not t['initialized']:
                     t['x'], t['y'] = best_gx, best_gy
-                    # [FIX]: Initialize with the true odometry heading, not 0.0
+                    # Initialize with the true odometry heading, not 0.0
                     t['theta'] = t['last_odom_theta'] if t['last_odom_theta'] is not None else 0.0
                     t['initialized'] = True
                     t['ema_x'], t['ema_y'] = best_gx, best_gy
                 else:
-                    # EMA smoothing (KEPT FOR APPLES-TO-APPLES COMPARISON)
-                    t['ema_x'] = self.ema_alpha * best_gx + (1 - self.ema_alpha) * t['ema_x']
-                    t['ema_y'] = self.ema_alpha * best_gy + (1 - self.ema_alpha) * t['ema_y']
+                    # --- THE STALE EMA FIX ---
+                    if t['missed_frames'] > 0:
+                        # Robot just emerged from occlusion. Bypass the stale EMA!
+                        t['ema_x'] = best_gx
+                        t['ema_y'] = best_gy
+                    else:
+                        # Normal EMA smoothing
+                        t['ema_x'] = self.ema_alpha * best_gx + (1 - self.ema_alpha) * t['ema_x']
+                        t['ema_y'] = self.ema_alpha * best_gy + (1 - self.ema_alpha) * t['ema_y']
+
+                    # --- ADAPTIVE R CALCULATION ---
+                    current_r_val = min(self.r_meas_max, self.r_meas_base + (t['missed_frames'] * self.r_meas_expansion))
+                    R_adaptive = np.diag([current_r_val, current_r_val])
 
                     # --- EKF UPDATE STEP ---
                     # H Matrix maps 3D state [x, y, theta] to 2D measurement [x, y]
                     H = np.array([[1.0, 0.0, 0.0],
-                                [0.0, 1.0, 0.0]])
+                                  [0.0, 1.0, 0.0]])
                     
                     # Innovation (Measurement Residual)
                     z = np.array([t['ema_x'], t['ema_y']])
                     h_x = np.array([t['x'], t['y']])
                     y_res = z - h_x
                     
-                    # Innovation Covariance (S)
-                    S = H @ t['p'] @ H.T + self.r_meas
+                    # Innovation Covariance (S) using Adaptive R Matrix
+                    S = H @ t['p'] @ H.T + R_adaptive
                     
                     # Kalman Gain (K) -> 3x2 Matrix
                     K = t['p'] @ H.T @ np.linalg.inv(S)
@@ -256,6 +272,10 @@ class MultiKalmanObserver(Node):
                     I = np.eye(3)
                     t['p'] = (I - K @ H) @ t['p']
 
+                # --- [OPTION 1 FIX]: Gradual R Recovery (Annealing) ---
+                # Decrease the penalty gracefully instead of instantly dropping to 0
+                t['missed_frames'] = max(0, t['missed_frames'] - 2)
+
             # 4. Handle Occlusions & Publish
             for rid, t in self.trackers.items():
                 if rid not in updated_robots and t['initialized']:
@@ -264,6 +284,7 @@ class MultiKalmanObserver(Node):
                 t['pub'].publish(self.create_pose_msg(t['x'], t['y']))
 
             self.log_unified_data()
+
     # ===============================
     # 4. CLUSTER EXTRACTION & LOGGING
     # ===============================
@@ -323,3 +344,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
