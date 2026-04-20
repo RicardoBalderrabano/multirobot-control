@@ -1,0 +1,15 @@
+/**:
+  ros__parameters:
+    # --- Local Swarm Control Gains ---
+    alpha: 1.0    # Cohesion (Attraction to neighbors)
+    beta: 0.64    # Dispersion (Repulsion from neighbors. 0.64 = 0.8m triangle)
+    
+    # --- Absolute Goal Tracking ---
+    rho: 0.5      # Goal Tracking Pull (How strongly they chase the goal)
+    goal_x: 0.0   # Global Target X coordinate in OptiTrack frame
+    goal_y: -1.5   # Global Target Y coordinate in OptiTrack frame
+    
+    # --- Robot Kinematics & Limits ---
+    b: 0.1        # Look-ahead point distance
+    max_v: 0.22   # Maximum linear velocity (m/s)
+    max_w: 1.5    # Maximum angular velocity (rad/s)

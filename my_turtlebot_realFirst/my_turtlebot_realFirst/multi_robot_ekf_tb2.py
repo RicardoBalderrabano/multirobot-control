@@ -367,7 +367,7 @@ class MultiKalmanObserver(Node):
         super().__init__('multi_kalman_observer')
         
         # --- Namespace Parameterization ---
-        self.declare_parameter('observer_namespace', 'tb1')
+        self.declare_parameter('observer_namespace', 'tb2')
         self.obs_ns = self.get_parameter('observer_namespace').value
         
         self.trackers = {}   

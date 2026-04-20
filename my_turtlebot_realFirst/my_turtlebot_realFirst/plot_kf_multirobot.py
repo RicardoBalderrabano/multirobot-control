@@ -1,9 +1,10 @@
+# PLOT ONLY ONE PERSPECTIVE 
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import re
 
-def plot_fleet_results(csv_file='fleet_tracking_results.csv'):
+def plot_fleet_results(csv_file='tb2_fleet_tracking_results.csv'):
     try:
         df = pd.read_csv(csv_file)
     except FileNotFoundError:
@@ -13,7 +14,13 @@ def plot_fleet_results(csv_file='fleet_tracking_results.csv'):
     # Constants
     BURGER_RADIUS = 0.178 / 2  # 178mm diameter Burger footprint
     
-    # Identify target robots (tb2, tb3, etc.)
+    # --- THE FIX: Dynamically identify the Observer ---
+    # The EKF always puts the observer's ground truth in the 2nd column
+    observer_id = df.columns[1].split('_')[0] 
+    obs_x_col = f'{observer_id}_gt_x'
+    obs_y_col = f'{observer_id}_gt_y'
+    
+    # Identify target robots (tb1, tb2, tb3, etc.)
     target_ids = sorted(list(set([re.match(r'(tb\d+)_kf_x', col).group(1) 
                                  for col in df.columns if '_kf_x' in col])))
     
@@ -22,37 +29,34 @@ def plot_fleet_results(csv_file='fleet_tracking_results.csv'):
 
     def draw_burger_footprint(ax, x, y, color, label_text, is_observer=False):
         """ Draws the circular footprint of a TurtleBot3 Burger """
-        # Draw the circle
         style = '--' if is_observer else '-'
         circle = plt.Circle((x, y), BURGER_RADIUS, color=color, fill=False, 
                             linestyle=style, linewidth=1.5, alpha=0.8)
         ax.add_patch(circle)
-        # Add a small dot in the center
         ax.plot(x, y, marker='.', color=color, markersize=4)
-        # Text label slightly offset
         ax.text(x, y + 0.12, label_text, color=color, fontsize=8, 
                 fontweight='bold', ha='center', va='bottom')
 
     # --- FIGURE 1: THE LAB FLOOR VIEW (Fixed Quadrant) ---
     fig1, ax1 = plt.subplots(figsize=(10, 10))
     
-    # 1. Plot Observer (TB1)
-    if 'tb1_gt_x' in df.columns:
-        ax1.plot(df['tb1_gt_x'], df['tb1_gt_y'], 'k--', alpha=0.3, label='TB1 (Observer) GT')
-        draw_burger_footprint(ax1, df['tb1_gt_x'].iloc[0], df['tb1_gt_y'].iloc[0], 'black', 'TB1 Start', True)
-        draw_burger_footprint(ax1, df['tb1_gt_x'].iloc[-1], df['tb1_gt_y'].iloc[-1], 'black', 'TB1 End', True)
+    # 1. Plot Observer (Dynamic)
+    if obs_x_col in df.columns:
+        ax1.plot(df[obs_x_col], df[obs_y_col], 'k--', alpha=0.3, label=f'{observer_id.upper()} (Observer) GT')
+        draw_burger_footprint(ax1, df[obs_x_col].iloc[0], df[obs_y_col].iloc[0], 'black', f'{observer_id.upper()} Start', True)
+        draw_burger_footprint(ax1, df[obs_x_col].iloc[-1], df[obs_y_col].iloc[-1], 'black', f'{observer_id.upper()} End', True)
 
     # 2. Plot Targets
     for i, rid in enumerate(target_ids):
         c = colors[i % len(colors)]
-        ax1.plot(df[f'{rid}_gt_x'], df[f'{rid}_gt_y'], color='green', linewidth=1, alpha=0.4, label=f'{rid} GT' if i==0 else "")
-        ax1.plot(df[f'{rid}_kf_x'], df[f'{rid}_kf_y'], color=c, linestyle=':', linewidth=2, label=f'{rid} Fused KF')
+        ax1.plot(df[f'{rid}_gt_x'], df[f'{rid}_gt_y'], color='green', linewidth=1, alpha=0.4, label=f'{rid.upper()} GT' if i==0 else "")
+        ax1.plot(df[f'{rid}_kf_x'], df[f'{rid}_kf_y'], color=c, linestyle=':', linewidth=2, label=f'{rid.upper()} Fused KF')
         
         # Start/End circles
-        draw_burger_footprint(ax1, df[f'{rid}_kf_x'].iloc[0], df[f'{rid}_kf_y'].iloc[0], c, f'{rid} Start')
-        draw_burger_footprint(ax1, df[f'{rid}_kf_x'].iloc[-1], df[f'{rid}_kf_y'].iloc[-1], c, f'{rid} End')
+        draw_burger_footprint(ax1, df[f'{rid}_kf_x'].iloc[0], df[f'{rid}_kf_y'].iloc[0], c, f'{rid.upper()} Start')
+        draw_burger_footprint(ax1, df[f'{rid}_kf_x'].iloc[-1], df[f'{rid}_kf_y'].iloc[-1], c, f'{rid.upper()} End')
 
-    ax1.set_title('Lab Floor View (Fixed $2\text{m} \\times 2\text{m}$ Quadrant)')
+    ax1.set_title(f'{observer_id.upper()} LAB FLOOR VIEW (Fixed $2\text{{m}} \\times 2\text{{m}}$ Quadrant)')
     ax1.set_xlim([-2, 2])
     ax1.set_ylim([-2, 2])
     ax1.set_aspect('equal')
@@ -63,25 +67,24 @@ def plot_fleet_results(csv_file='fleet_tracking_results.csv'):
 
     # --- FIGURE 2: TRAJECTORY DETAIL (Auto-Scaled) ---
     fig2, ax2 = plt.subplots(figsize=(10, 8))
-    # (Same plotting logic but without fixed limits for a zoomed-in view)
-    if 'tb1_gt_x' in df.columns:
-        ax2.plot(df['tb1_gt_x'], df['tb1_gt_y'], 'k--', alpha=0.2)
+    
+    if obs_x_col in df.columns:
+        ax2.plot(df[obs_x_col], df[obs_y_col], 'k--', alpha=0.2, label=f'{observer_id.upper()} Observer')
     
     performance_stats = []
     for i, rid in enumerate(target_ids):
         c = colors[i % len(colors)]
         ax2.plot(df[f'{rid}_gt_x'], df[f'{rid}_gt_y'], 'g-', alpha=0.3)
-        ax2.plot(df[f'{rid}_kf_x'], df[f'{rid}_kf_y'], color=c, linestyle=':', label=f'{rid} KF')
+        ax2.plot(df[f'{rid}_kf_x'], df[f'{rid}_kf_y'], color=c, linestyle=':', label=f'{rid.upper()} KF')
         
         err = np.sqrt((df[f'{rid}_kf_x'] - df[f'{rid}_gt_x'])**2 + (df[f'{rid}_kf_y'] - df[f'{rid}_gt_y'])**2)
-        performance_stats.append(f"{rid} Final RMSE: {np.sqrt(np.mean(err**2)):.4f} m")
+        performance_stats.append(f"{rid.upper()} Final RMSE: {np.sqrt(np.mean(err**2)):.4f} m")
 
     ax2.set_title('Detailed Trajectory Comparison')
     ax2.set_aspect('equal')
     ax2.grid(True)
     ax2.legend()
     
-    # Add stats box to Figure 2
     plt.gcf().text(0.15, 0.02, "PERFORMANCE SUMMARY:\n" + "\n".join(performance_stats), 
                    bbox=dict(facecolor='white', alpha=0.8))
 
@@ -90,7 +93,7 @@ def plot_fleet_results(csv_file='fleet_tracking_results.csv'):
     for i, rid in enumerate(target_ids):
         err = np.sqrt((df[f'{rid}_kf_x'] - df[f'{rid}_gt_x'])**2 + (df[f'{rid}_kf_y'] - df[f'{rid}_gt_y'])**2)
         running_rmse = np.sqrt(np.cumsum(err**2) / (np.arange(len(err)) + 1))
-        plt.plot(df['timestamp'], running_rmse, color=colors[i % len(colors)], label=f'RMSE: {rid}')
+        plt.plot(df['timestamp'], running_rmse, color=colors[i % len(colors)], label=f'RMSE: {rid.upper()}')
     
     plt.title('Accuracy Tracking over Time')
     plt.xlabel('Time (s)')
@@ -101,4 +104,5 @@ def plot_fleet_results(csv_file='fleet_tracking_results.csv'):
     plt.show()
 
 if __name__ == "__main__":
-    plot_fleet_results()
+    # Change this line depending on which robot's brain you want to look at!
+    plot_fleet_results('tb1_fleet_tracking_results.csv')
