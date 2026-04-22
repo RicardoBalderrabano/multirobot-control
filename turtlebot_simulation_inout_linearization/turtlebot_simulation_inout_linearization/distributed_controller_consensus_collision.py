@@ -1,26 +1,23 @@
-
 #!/usr/bin/env python3
 """
 Distributed Swarm Controller (Master Node)
-Uses the Strategy Pattern to dynamically switch between control laws.
+Uses dynamic 2-second heartbeat discovery to prevent startup race conditions.
 """
 
 import rclpy
 from rclpy.node import Node
 import numpy as np
 import re
-import time
 import csv
 import os
 
-from geometry_msgs.msg import TwistStamped, PoseStamped
+from geometry_msgs.msg import TwistStamped, PoseStamped, Twist
+from nav_msgs.msg import Odometry
 from tf_transformations import euler_from_quaternion
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
-# Import the strategies from your new library file
-# Note: Adjust the import path if your ROS 2 package requires it 
-# (e.g., from my_turtlebot_realFirst.control_strategies import ...)
-from my_turtlebot_realFirst.control_strategies import (
+# Import the strategies from your simulation package
+from turtlebot_simulation_inout_linearization.control_strategies import (
     ConsensusCollision, 
     AbsoluteGoalTracking, 
     DynamicTrajectory, 
@@ -34,8 +31,13 @@ class DistributedControllerOptitrack(Node):
         # --- Core Parameters ---
         self.declare_parameter('robot_namespace', 'tb1')
         self.declare_parameter('pose_topic', '/tb1/pose')
+        self.declare_parameter('sim_mode', False)
+        self.declare_parameter('use_twist_msg', False)
+        
         self.ns = self.get_parameter('robot_namespace').value
         self.pose_topic = self.get_parameter('pose_topic').value
+        self.is_sim = self.get_parameter('sim_mode').value
+        self.use_twist = self.get_parameter('use_twist_msg').value
 
         # --- Control Strategy Selector ---
         self.declare_parameter('control_mode', 'dynamic_trajectory')
@@ -44,7 +46,6 @@ class DistributedControllerOptitrack(Node):
         mode_name = self.get_parameter('control_mode').value
         self.traj_type = self.get_parameter('traj_type').value
 
-        # Initialize the Strategy Dictionary
         self.strategies = {
             'consensus_collision': ConsensusCollision(),
             'absolute_goal': AbsoluteGoalTracking(),
@@ -58,9 +59,8 @@ class DistributedControllerOptitrack(Node):
             
         self.active_strategy = self.strategies[mode_name]
         self.get_logger().info(f"--- Swarm Controller Started ({self.ns.upper()}) ---")
-        self.get_logger().info(f"ACTIVE MODE: {mode_name.upper()}")
         
-        # --- Declare All Possible Math Parameters ---
+        # --- Math Parameters ---
         params_to_declare = [
             ('alpha', 1.0), ('beta', 0.25), ('rho', 0.5),
             ('goal_x', 0.0), ('goal_y', 0.0),
@@ -72,7 +72,6 @@ class DistributedControllerOptitrack(Node):
         for name, default in params_to_declare:
             self.declare_parameter(name, default)
 
-        # Retrieve Kinematics
         self.b = self.get_parameter('b').value
         self.max_v = self.get_parameter('max_v').value
         self.max_w = self.get_parameter('max_w').value
@@ -97,28 +96,51 @@ class DistributedControllerOptitrack(Node):
             except Exception: pass 
         
         # --- ROS 2 Setup ---
-        self.pub_cmd = self.create_publisher(TwistStamped, f'/{self.ns}/cmd_vel', 10)
+        self.cmd_type = Twist if self.use_twist else TwistStamped
+        self.pub_cmd = self.create_publisher(self.cmd_type, f'/{self.ns}/cmd_vel', 10)
         
         optitrack_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
             history=HistoryPolicy.KEEP_LAST, depth=1
         )
-        self.sub_pose = self.create_subscription(PoseStamped, self.pose_topic, self.pose_callback, optitrack_qos)
         
-        time.sleep(1.0)
-        self.discover_neighbors_once()
-        self.timer = self.create_timer(0.05, self.control_loop) # 20Hz Loop
+        msg_type = Odometry if self.is_sim else PoseStamped
+        self.sub_pose = self.create_subscription(msg_type, self.pose_topic, self.pose_callback, optitrack_qos)
+        
+        # CONTINUOUS TIMERS
+        self.discovery_timer = self.create_timer(2.0, self.discover_neighbors) # Scan every 2 seconds
+        self.timer = self.create_timer(0.05, self.control_loop)                # 20Hz Loop
 
-    def discover_neighbors_once(self):
+    def extract_pose(self, msg):
+        if hasattr(msg, 'pose') and hasattr(msg.pose, 'pose'):
+            return msg.pose.pose
+        else:
+            return msg.pose
+
+    def discover_neighbors(self):
         topic_list = self.get_topic_names_and_types()
-        kalman_pattern = rf'^/{self.ns}/tracked_(tb\d+)$'
-        for topic_name, _ in topic_list:
-            match = re.match(kalman_pattern, topic_name)
+        
+        if self.is_sim:
+            pattern = r'^/(tb\d+)/ground_truth_pose$'
+        else:
+            pattern = rf'^/{self.ns}/tracked_(tb\d+)$'
+            
+        for topic_name, topic_types in topic_list:
+            match = re.match(pattern, topic_name)
             if match:
                 nid = match.group(1)
-                self.create_subscription(PoseStamped, topic_name, lambda msg, n=nid: self.neighbor_callback(msg, n), 10)
-                self.get_logger().info(f"✅ Subscribed to Neighbor: {topic_name}")
+                
+                if self.is_sim and nid == self.ns:
+                    continue 
+                
+                # Only subscribe if we haven't seen them yet
+                if nid not in self.neighbors:
+                    self.neighbors[nid] = {'x': 0.0, 'y': 0.0, 'last_time': 0.0}
+                    msg_type = Odometry if 'nav_msgs/msg/Odometry' in topic_types else PoseStamped
+                    self.create_subscription(
+                        msg_type, topic_name, lambda msg, n=nid: self.neighbor_callback(msg, n), 10)
+                    self.get_logger().info(f"✅ CONTROLLER ({self.ns.upper()}): Linked with {nid}!")
 
     def pose_callback(self, msg):
         self.pose_received = True
@@ -127,8 +149,10 @@ class DistributedControllerOptitrack(Node):
         if self.experiment_start_time is None:
             self.experiment_start_time = curr
             
-        self.x, self.y = msg.pose.position.x, msg.pose.position.y
-        orientation = msg.pose.orientation
+        actual_pose = self.extract_pose(msg)
+        self.x, self.y = actual_pose.position.x, actual_pose.position.y
+        orientation = actual_pose.orientation
+        
         try:
             (_, _, self.theta) = euler_from_quaternion([orientation.x, orientation.y, orientation.z, orientation.w])
             self.xB = self.x + self.b * np.cos(self.theta)
@@ -136,26 +160,24 @@ class DistributedControllerOptitrack(Node):
         except Exception: return
 
     def neighbor_callback(self, msg, neighbor_id):
+        actual_pose = self.extract_pose(msg)
         self.neighbors[neighbor_id] = {
-            'x': msg.pose.position.x, 'y': msg.pose.position.y,
+            'x': actual_pose.position.x, 'y': actual_pose.position.y,
             'last_time': self.get_clock().now().nanoseconds / 1e9
         }
 
     def get_trajectory_reference(self, t):
-        """Generates the requested trajectory shape."""
         c_x = self.get_parameter('traj_center_x').value
         c_y = self.get_parameter('traj_center_y').value
         R = self.get_parameter('traj_radius').value
         w = self.get_parameter('traj_w').value
 
         if self.traj_type == 'figure8':
-            # Vertical Figure-8 Math
             r_x = c_x + (R / 2.0) * np.sin(2 * w * t)
             r_y = c_y + 1.25 * np.sin(w * t)
             r_dot_x = R * w * np.cos(2 * w * t)
             r_dot_y = 1.25 * w * np.cos(w * t)
         else:
-            # Default Circle Math
             r_x = c_x + R * np.cos(w * t)
             r_y = c_y + R * np.sin(w * t)
             r_dot_x = -R * w * np.sin(w * t)
@@ -164,7 +186,6 @@ class DistributedControllerOptitrack(Node):
         return r_x, r_y, r_dot_x, r_dot_y
 
     def get_current_params_dict(self):
-        """Packages all current ROS 2 parameters into a dictionary for the strategy."""
         return {
             'alpha': self.get_parameter('alpha').value,
             'beta': self.get_parameter('beta').value,
@@ -185,49 +206,47 @@ class DistributedControllerOptitrack(Node):
             self.stop_robot()
             return
 
-        # 1. Package the State Data
         robot_state = {'xB': self.xB, 'yB': self.yB}
-        
-        # 2. Package the Target Data
         t = now - self.experiment_start_time
         traj_ref = self.get_trajectory_reference(t)
         
-        # 3. Clean up inactive neighbors
         active_neighbors = {nid: data for nid, data in self.neighbors.items() if (now - data['last_time']) <= 2.0}
         
         if len(active_neighbors) == 0 and self.get_parameter('control_mode').value != 'absolute_goal':
             self.stop_robot()
             return
 
-        # 4. EXECUTE STRATEGY
         params_dict = self.get_current_params_dict()
         u_x, u_y = self.active_strategy.compute(robot_state, active_neighbors, traj_ref, params_dict)
 
-        # 5. I/O LINEARIZATION
         c_th, s_th = np.cos(self.theta), np.sin(self.theta)
         v_cmd = u_x * c_th + u_y * s_th
         w_cmd = (1.0 / self.b) * (-u_x * s_th + u_y * c_th)
 
-        # 6. SATURATION
         scale = min(self.max_v / abs(v_cmd) if abs(v_cmd) > self.max_v else 1.0,
                     self.max_w / abs(w_cmd) if abs(w_cmd) > self.max_w else 1.0)
         v_cmd *= scale
         w_cmd *= scale
 
-        # 7. LOG & PUBLISH
         try:
             with open(self.csv_filename, 'a', newline='') as f:
                 csv.writer(f).writerow([now, self.ns, v_cmd, w_cmd])
         except Exception: pass 
 
-        msg = TwistStamped()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = "base_link"
-        msg.twist.linear.x, msg.twist.angular.z = float(v_cmd), float(w_cmd)
+        msg = self.cmd_type()
+        if not self.use_twist:
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = "base_link"
+            msg.twist.linear.x = float(v_cmd)
+            msg.twist.angular.z = float(w_cmd)
+        else:
+            msg.linear.x = float(v_cmd)
+            msg.angular.z = float(w_cmd)
+
         self.pub_cmd.publish(msg)
 
     def stop_robot(self):
-        msg = TwistStamped()
+        msg = self.cmd_type()
         self.pub_cmd.publish(msg)
 
 def main(args=None):

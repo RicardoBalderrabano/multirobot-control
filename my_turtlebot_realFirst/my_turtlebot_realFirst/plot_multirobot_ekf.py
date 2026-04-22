@@ -148,13 +148,13 @@ def plot_all_perspectives(csv_files=['tb1_fleet_tracking_results.csv',
             color_idx += 1
             
         # Draw the target 0.8m formation line
-        ax4.axhline(0.8, color='black', linestyle='--', linewidth=2, label='Target Equilibrium (0.8m)')
+        ax4.axhline(0.5, color='black', linestyle='--', linewidth=2, label='Target Equilibrium (0.8m)')
         
         ax4.set_title(f'Consensus Distances: {observer_id.upper()}', fontsize=14)
         ax4.set_xlabel('Time (s)')
         ax4.set_ylabel('Distance (m)')
         # Add some headroom so the 0.8 line is clearly visible
-        ax4.set_ylim([0, max(ax4.get_ylim()[1], 1.2)]) 
+        ax4.set_ylim([0, max(ax4.get_ylim()[1], 1.0)]) 
         ax4.grid(True)
         ax4.legend(loc='lower right')
 
