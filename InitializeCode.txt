@@ -68,6 +68,7 @@ ros2 run my_turtlebot_realFirst simple_tracker
 # RUN SIMULATION MULTIROBOT SELECTION STRATEGY
 # 1. Navigate to your workspace
 cd ~/multirobot_ws
+colcon build --packages-select turtlebot_simulation_inout_linearization
 killall -9 ruby gzserver gzclient python3
 ros2 daemon stop
 ros2 daemon start
