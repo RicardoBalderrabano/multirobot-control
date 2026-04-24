@@ -3,6 +3,15 @@
 import os
 import yaml
 import tempfile
+import time
+import math
+
+# --- IMPORTS FOR DIGITAL TWIN SNIFFER ---
+import rclpy
+from rclpy.node import Node as RclpyNode
+from geometry_msgs.msg import PoseStamped
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+# --------------------------------------------
 
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
@@ -12,6 +21,75 @@ from launch_ros.actions import Node, PushRosNamespace
 from launch.actions import GroupAction
 
 from ament_index_python.packages import get_package_share_directory
+
+# ==============================================================================
+# DIGITAL TWIN INITIALIZATION (OPTITRACK SNIFFER)
+# ==============================================================================
+def euler_yaw_from_quaternion(x, y, z, w):
+    """Calculates Yaw from Quaternion without needing tf_transformations dependency."""
+    t3 = +2.0 * (w * z + x * y)
+    t4 = +1.0 - 2.0 * (y * y + z * z)
+    return math.atan2(t3, t4)
+
+def get_real_robot_poses(robot_names, timeout=3.0):
+    """Spins a temporary node to fetch real OptiTrack poses before spawning."""
+    rclpy.init()
+    node = RclpyNode('initial_pose_sniffer')
+    
+    poses = {name: None for name in robot_names}
+    
+    # Dynamic callback generator for each robot
+    def make_cb(name):
+        def cb(msg):
+            if poses[name] is None:
+                q = msg.pose.orientation
+                yaw = euler_yaw_from_quaternion(q.x, q.y, q.z, q.w)
+                poses[name] = {'x': msg.pose.position.x, 'y': msg.pose.position.y, 'yaw': yaw}
+        return cb
+        
+    # --- QOS FIX APPLIED HERE ---
+    qos_best_effort = QoSProfile(
+        reliability=ReliabilityPolicy.BEST_EFFORT,
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1
+    )
+    
+    subs = []
+    for name in robot_names:
+        subs.append(node.create_subscription(PoseStamped, f'/{name}/pose', make_cb(name), qos_best_effort))
+        
+    print("\n--- 📡 SYNCING DIGITAL TWIN WITH OPTITRACK ---")
+    print(f"Waiting up to {timeout} seconds for real poses...")
+    
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        rclpy.spin_once(node, timeout_sec=0.1)
+        if all(p is not None for p in poses.values()):
+            break
+            
+    node.destroy_node()
+    rclpy.shutdown()
+    
+    # Fallback dictionary in case OptiTrack is off or a robot is missing
+    defaults = {
+        'tb1': {'x':  0.5, 'y':  0.0, 'yaw': 0.0},
+        'tb2': {'x': -0.5, 'y':  0.0, 'yaw': 0.0},
+        'tb3': {'x':  0.0, 'y':  0.5, 'yaw': 0.0}
+        #'tb7': {'x':  0.0, 'y': -0.5, 'yaw': 0.0}
+    }
+    
+    results = []
+    for name in robot_names:
+        if poses[name] is not None:
+            print(f"✅ Found {name.upper()}: x={poses[name]['x']:.2f}, y={poses[name]['y']:.2f}, yaw={poses[name]['yaw']:.2f}")
+            results.append({'name': name, 'x': poses[name]['x'], 'y': poses[name]['y'], 'yaw': poses[name]['yaw']})
+        else:
+            print(f"⚠️ Timeout for {name.upper()}. Using default fallback cluster.")
+            results.append({'name': name, 'x': defaults[name]['x'], 'y': defaults[name]['y'], 'yaw': defaults[name]['yaw']})
+            
+    print("----------------------------------------------\n")
+    return results
+# ==============================================================================
 
 
 def _make_namespaced_sdf(original_sdf_path, namespace):
@@ -120,13 +198,9 @@ def generate_launch_description():
     model_sdf_path = os.path.join(turtlebot_model_dir, 'model.sdf')
     bridge_yaml_path = os.path.join(tb3_gazebo_dir, 'params', 'turtlebot3_burger_bridge.yaml')
 
-    # UPDATED: 4 Robots, clustered tightly near the center
-    robots = [
-        {'name': 'tb1', 'x':  0.5, 'y':  0.0},
-        {'name': 'tb2', 'x': -0.5, 'y':  0.0},
-        {'name': 'tb3', 'x':  0.0, 'y':  0.5},
-        {'name': 'tb7', 'x':  0.0, 'y': -0.5},
-    ]
+    # ALL 4 ROBOTS EXPLICITLY DEFINED HERE via the Sniffer
+    robot_names_list = ['tb1', 'tb2', 'tb3']
+    robots = get_real_robot_poses(robot_names_list)
 
     ld = LaunchDescription()
 
@@ -169,7 +243,8 @@ def generate_launch_description():
                     '-file', namespaced_sdf,
                     '-x', str(robot['x']),
                     '-y', str(robot['y']),
-                    '-z', '0.01'
+                    '-z', '0.01',
+                    '-Y', str(robot['yaw'])
                 ],
                 output='screen'
             ),
@@ -188,24 +263,25 @@ def generate_launch_description():
                 package='turtlebot_simulation_inout_linearization',
                 executable='distributed_controller_consensus_collision',
                 name=f'{ns}_controller',
-                # DELETED namespace=ns here to prevent double namespace (/tb1/tb1)
                 parameters=[{
                     'robot_namespace': ns,
                     'pose_topic': f'/{ns}/ground_truth_pose',
-                    'sim_mode': False,            # Let Mock EKF handle neighborhood topics
-                    'use_twist_msg': True,        # Forces pure Twist for Gazebo bridge compatibility
-                    'control_mode': 'dynamic_trajectory',
+                    'sim_mode': False,            
+                    'use_twist_msg': True,        
+                    'control_mode': 'anisotropic_ellipse',  # CHANGE FOR THE STRATEGIC
                     'traj_type': 'circle',
                     'alpha': 1.0,
                     'beta': 0.25,
-                    'rho': 0.6,
+                    'rho': 3.0,
+                    'goal_x': 0.0,
+                    'goal_y': 0.0,
                     'traj_center_x': 0.0,
                     'traj_center_y': 0.0,
-                    'traj_radius': 0.6,
-                    'traj_w': 0.12,
-                    'm11': 0.36,
-                    'm22': 0.10,
-                    'is_rotating': True,
+                    'traj_radius': 1.0,
+                    'traj_w': 0.08,
+                    'm11': 1.0,
+                    'm22': 1.0,
+                    'is_rotating': False,
                     'ellipse_alpha': 0.0,
                     'b': 0.1,
                     'max_v': 0.18,
@@ -219,7 +295,6 @@ def generate_launch_description():
                 package='turtlebot_simulation_inout_linearization',
                 executable='mock_ekf_node',
                 name=f'{ns}_mock_ekf',
-                # DELETED namespace=ns here to prevent double namespace (/tb1/tb1)
                 parameters=[{'observer_namespace': ns}],
                 output='screen'
             )

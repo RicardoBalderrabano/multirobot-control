@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Distributed Swarm Controller (Master Node)
-Uses dynamic 2-second heartbeat discovery to prevent startup race conditions.
+Uses dynamic 2-second heartbeat discovery and logs X/Y for Matplotlib trajectories.
 """
 
 import rclpy
@@ -84,15 +84,16 @@ class DistributedControllerOptitrack(Node):
         self.experiment_start_time = None 
         self.neighbors = {}
 
-        # --- Logging Setup ---
-        save_dir = '/home/ricardo/multirobot_ws/src/multirobot_control/my_turtlebot_realFirst/plotting'
+        # --- UPDATED: Logging Setup ---
+        save_dir = '/home/ricardo/multirobot_ws/src/multirobot_control/turtlebot_simulation_inout_linearization/plotting'
         os.makedirs(save_dir, exist_ok=True) 
         self.csv_filename = os.path.join(save_dir, f'swarm_effort_{mode_name}.csv')
         
         if not os.path.exists(self.csv_filename):
             try:
                 with open(self.csv_filename, 'w', newline='') as f:
-                    csv.writer(f).writerow(['timestamp', 'robot_id', 'v_cmd', 'w_cmd'])
+                    # ADDED 'x' and 'y' to the header
+                    csv.writer(f).writerow(['timestamp', 'robot_id', 'x', 'y', 'v_cmd', 'w_cmd'])
             except Exception: pass 
         
         # --- ROS 2 Setup ---
@@ -228,9 +229,11 @@ class DistributedControllerOptitrack(Node):
         v_cmd *= scale
         w_cmd *= scale
 
+        # --- UPDATED: LOG & PUBLISH ---
         try:
             with open(self.csv_filename, 'a', newline='') as f:
-                csv.writer(f).writerow([now, self.ns, v_cmd, w_cmd])
+                # ADDED self.x and self.y
+                csv.writer(f).writerow([now, self.ns, self.x, self.y, v_cmd, w_cmd])
         except Exception: pass 
 
         msg = self.cmd_type()

@@ -64,3 +64,42 @@ ros2 bag play my_test_data --loop --clock
 colcon build --packages-select my_turtlebot_realFirst
 ros2 run my_turtlebot_realFirst simple_tracker
 
+########################################################################################################
+# RUN SIMULATION MULTIROBOT SELECTION STRATEGY
+# 1. Navigate to your workspace
+cd ~/multirobot_ws
+killall -9 ruby gzserver gzclient python3
+ros2 daemon stop
+ros2 daemon start
+ros2 launch turtlebot_simulation_inout_linearization multi_robot_simulation.launch.py
+
+
+
+CIRCLE
+/**:
+  ros__parameters:
+    # --- Local Swarm Control Gains ---
+    alpha: 1.0    
+    beta: 0.25         # Tighter 0.5m formation
+    rho: 0.4           # Smoother tracking, less "pull"
+    
+    # --- Dynamic Trajectory Tracking ---
+    traj_center_x: 0.0 
+    traj_center_y: 0.0 
+    traj_radius: 1.2   # 1.2m radius (2.4m total width)
+    traj_w: 0.08       # 0.08 rad/s (Smooth & professional speed)
+    
+    # --- Robot Kinematics & Limits ---
+    b: 0.1        
+    max_v: 0.22   
+    max_w: 1.5
+    
+    
+    ## RUN REAL
+    ROS LAUNCH EVERY ROBOT
+    LAUNCH EKF FOR EACH
+    
+    cd ~/multirobot_ws
+    colcon build --packages-select my_turtlebot_realFirst
+    ros2 launch my_turtlebot_realFirst swarm_launch.py
+

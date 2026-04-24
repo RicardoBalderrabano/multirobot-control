@@ -411,7 +411,7 @@ class MultiKalmanObserver(Node):
         
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [self.scan_sub, self.obs_pose_sub], 
-            queue_size=10, slop=0.05
+            queue_size=10, slop=0.15
         )
         self.ts.registerCallback(self.sync_lidar_callback)
 

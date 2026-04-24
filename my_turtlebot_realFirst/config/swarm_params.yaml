@@ -4,7 +4,7 @@
     # 1. MAIN SWITCH
     # ==========================================
     # Options: 'consensus_collision', 'absolute_goal', 'dynamic_trajectory', 'anisotropic_ellipse'
-    control_mode: 'dynamic_trajectory'
+    control_mode: 'anisotropic_ellipse'
     
     # Options: 'circle', 'figure8'
     traj_type: 'circle'
@@ -14,24 +14,24 @@
     # ==========================================
     alpha: 1.0    # Cohesion
     beta: 0.25    # Dispersion (0.25 = 0.5m triangle)
-    rho: 0.6      # Goal/Trajectory Tracking Pull
+    rho: 3.0      # Goal/Trajectory Tracking Pull
     
     # ==========================================
     # 3. MODE-SPECIFIC PARAMETERS
     # ==========================================
     # For 'absolute_goal' mode
     goal_x: 0.0
-    goal_y: -1.5
+    goal_y: 0.0
     
     # For 'dynamic_trajectory' & 'anisotropic_ellipse' modes
     traj_center_x: 0.0
     traj_center_y: 0.0
-    traj_radius: 0.6
-    traj_w: 0.12
+    traj_radius: 1.0
+    traj_w: 0.08
     
     # For 'anisotropic_ellipse' mode
-    m11: 0.36             # Strong repulsion along major axis
-    m22: 0.1             # Weak repulsion along minor axis
+    m11: 1.0             # Strong repulsion along major axis
+    m22: 1.0             # Weak repulsion along minor axis
     is_rotating: False    # True = steers with path, False = uses fixed angle
     ellipse_alpha: 0.0  # Fixed angle (rad) if is_rotating is False
     

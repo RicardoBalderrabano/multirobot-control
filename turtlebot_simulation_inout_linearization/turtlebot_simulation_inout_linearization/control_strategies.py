@@ -98,31 +98,30 @@ class AnisotropicEllipse(BaseControlLaw):
 
         ca, sa = np.cos(ellipse_alpha), np.sin(ellipse_alpha)
         R_mat = np.array([[ca, -sa], [sa, ca]])
-        M_diag = np.array([[params.get('m11', 1.0), 0.0], 
-                           [0.0, params.get('m22', 1.0)]])
+        
+        # The professor's M matrix handles BOTH shape and repulsion strength!
+        M_diag = np.array([[params.get('m11', 1.0), 1.0], 
+                           [-1.0, params.get('m22', 1.0)]])
         M_rot = R_mat @ M_diag @ R_mat.T
 
         u_disp_x, u_disp_y = 0.0, 0.0
-        u_coh_x, u_coh_y = 0.0, 0.0   # NEW: Cohesion terms
         
         for nid, n_pos in neighbors.items():
             dx = robot_state['xB'] - n_pos['x']
             dy = robot_state['yB'] - n_pos['y']
             dist_sq = max(dx**2 + dy**2, 0.0001)
             
-            # Anisotropic Repulsion
+            # Raw dispersion vector (NO beta multiplier here!)
             u_disp_x += dx / dist_sq
             u_disp_y += dy / dist_sq
             
-            # NEW: Isotropic Attraction
-            u_coh_x += -params.get('alpha', 1.0) * dx
-            u_coh_y += -params.get('alpha', 1.0) * dy
-            
         disp_vec = np.array([u_disp_x, u_disp_y])
+        
+        # Multiply the raw vector by the rotated M matrix
         u_disp = M_rot @ disp_vec
         
-        # Add tracking, feedforward, dispersion, AND cohesion
-        u_x = -params['rho'] * (robot_state['xB'] - r_x) + u_disp[0] + u_coh_x + r_dot_x
-        u_y = -params['rho'] * (robot_state['yB'] - r_y) + u_disp[1] + u_coh_y + r_dot_y
+        # Final control law matching the handwritten note exactly
+        u_x = -params['rho'] * (robot_state['xB'] - r_x) + u_disp[0] + r_dot_x
+        u_y = -params['rho'] * (robot_state['yB'] - r_y) + u_disp[1] + r_dot_y
         
         return u_x, u_y
