@@ -125,3 +125,93 @@ class AnisotropicEllipse(BaseControlLaw):
         u_y = -params['rho'] * (robot_state['yB'] - r_y) + u_disp[1] + r_dot_y
         
         return u_x, u_y
+        
+class T1PointMassFlocking(BaseControlLaw):
+    """
+    T1 Strategy: Point-Mass Flocking.
+    Uses y-axis proportional alignment and x-axis point-mass repulsion.
+    Warning: Repulsion denominator (x_i - x_j) assumes zero physical volume.
+    """
+    def compute(self, robot_state, neighbors, traj_ref, params):
+        x_i = robot_state['xB']
+        y_i = robot_state['yB']
+        
+        # New parameters specific to this strategy
+        K = params.get('K', 2.0)          # Y-axis alignment stiffness
+        y_bar = params.get('y_bar', 0.0)  # Target Y consensus line
+        rho = params.get('rho', 1.0)      # X-axis goal attraction
+        alpha = params.get('alpha', 1.0)  # X-axis swarm cohesion
+        beta = params.get('beta', 1.0)    # X-axis point-mass repulsion
+        
+        # --- Eq 1: Y-Axis Alignment ---
+        u_y = -K * (y_i - y_bar)
+        
+        # --- Eq 2: X-Axis Point-Mass Flocking ---
+        u_x = -rho * x_i
+        
+        for nid, n_pos in neighbors.items():
+            x_j = n_pos['x']
+            dx = x_i - x_j
+            
+            # Safeguard: Prevent division by zero if centers perfectly align
+            if abs(dx) < 0.0001:
+                dx = 0.0001 if dx >= 0 else -0.0001
+                
+            u_x += -alpha * dx + beta * (1.0 / dx)
+            
+        return u_x, u_y
+
+
+class T2DimensionAwareFlocking(BaseControlLaw):
+    """
+    T2 Strategy: Dimension-Aware Flocking (Safe Regions).
+    Uses y-axis proportional alignment and x-axis barrier-certificate repulsion.
+    Accounts for the physical volume (d_i + d_j) of the robots.
+    """
+    def compute(self, robot_state, neighbors, traj_ref, params):
+        x_i = robot_state['xB']
+        y_i = robot_state['yB']
+        
+        # Parameters
+        K = params.get('K', 2.0)          
+        y_bar = params.get('y_bar', 0.0)  
+        rho = params.get('rho', 1.0)      
+        alpha = params.get('alpha', 1.0)  
+        beta = params.get('beta', 1.0)    
+        
+        # Physical safe region (d_i + d_j). For a TurtleBot Burger, 
+        # radius is ~0.089m, so two robots touching is ~0.178m. 
+        # Add a buffer for sensor noise.
+        safe_dist = params.get('safe_dist', 0.25) 
+        
+        # --- Eq 1: Y-Axis Alignment ---
+        u_y = -K * (y_i - y_bar)
+        
+        # --- Eq 3: X-Axis Dimension-Aware Flocking ---
+        u_x = -rho * x_i
+        
+        for nid, n_pos in neighbors.items():
+            x_j = n_pos['x']
+            dx = x_i - x_j
+            
+            # 1. Calculate direction (sign)
+            # If dx is exactly 0, force a positive direction to prevent np.sign(0) from 
+            # killing the repulsion force when they are perfectly overlapping.
+            if dx == 0.0:
+                sign_dx = 1.0
+            else:
+                sign_dx = np.sign(dx)
+                
+            # 2. Calculate pure physical clearance
+            clearance = abs(dx) - safe_dist
+            
+            # 3. Safeguard: The Barrier Certificate
+            # If clearance goes negative (physical crash), the math will accidentally 
+            # pull them together. We must floor the clearance to a tiny positive number
+            # so the repulsive force spikes to infinity, acting as a solid wall.
+            if clearance <= 0.001:
+                clearance = 0.001
+                
+            u_x += -alpha * dx + beta * (sign_dx / clearance)
+            
+        return u_x, u_y

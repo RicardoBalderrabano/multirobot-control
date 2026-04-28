@@ -72,10 +72,10 @@ def get_real_robot_poses(robot_names, timeout=3.0):
     
     # Fallback dictionary in case OptiTrack is off or a robot is missing
     defaults = {
-        'tb1': {'x':  0.5, 'y':  0.0, 'yaw': 0.0},
-        'tb2': {'x': -0.5, 'y':  0.0, 'yaw': 0.0},
-        'tb3': {'x':  0.0, 'y':  0.5, 'yaw': 0.0}
-        #'tb7': {'x':  0.0, 'y': -0.5, 'yaw': 0.0}
+        'tb1': {'x':  1.0, 'y':  0.0, 'yaw': 0.0},
+        'tb2': {'x': -1.5, 'y':  -2.0, 'yaw': 0.0},
+        'tb3': {'x':  2.0, 'y':  -1.0, 'yaw': 0.0},
+        'tb7': {'x':  0.0, 'y': -0.5, 'yaw': 0.0}
     }
     
     results = []
@@ -199,7 +199,7 @@ def generate_launch_description():
     bridge_yaml_path = os.path.join(tb3_gazebo_dir, 'params', 'turtlebot3_burger_bridge.yaml')
 
     # ALL 4 ROBOTS EXPLICITLY DEFINED HERE via the Sniffer
-    robot_names_list = ['tb1', 'tb2', 'tb3']
+    robot_names_list = ['tb1', 'tb2', 'tb3','tb7']
     robots = get_real_robot_poses(robot_names_list)
 
     ld = LaunchDescription()
@@ -268,10 +268,10 @@ def generate_launch_description():
                     'pose_topic': f'/{ns}/ground_truth_pose',
                     'sim_mode': False,            
                     'use_twist_msg': True,        
-                    'control_mode': 'anisotropic_ellipse',  # CHANGE FOR THE STRATEGIC
+                    'control_mode': 't1_flocking',  # CHANGE FOR THE STRATEGIC
                     'traj_type': 'circle',
                     'alpha': 1.0,
-                    'beta': 0.25,
+                    'beta': 2.0,
                     'rho': 3.0,
                     'goal_x': 0.0,
                     'goal_y': 0.0,
@@ -285,7 +285,10 @@ def generate_launch_description():
                     'ellipse_alpha': 0.0,
                     'b': 0.1,
                     'max_v': 0.18,
-                    'max_w': 1.5
+                    'max_w': 1.5,
+                    'K': 2.0,                 # <--- ADDED HERE
+                    'y_bar': 1.0,             # <--- ADDED HERE
+                    'safe_dist': 0.25         # <--- ADDED HERE
                 }],
                 output='screen'
             ),

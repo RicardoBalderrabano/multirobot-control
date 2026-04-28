@@ -10,7 +10,7 @@ import sys
 # CONFIGURATION
 # ==========================================
 SAVE_DIR = '/home/ricardo/multirobot_ws/src/multirobot_control/turtlebot_simulation_inout_linearization/plotting'
-MODE_NAME = 'anisotropic_ellipse' # Updated to match your current test
+MODE_NAME = 't1_flocking' # Updated to match your current test
 CSV_FILENAME = f'swarm_effort_{MODE_NAME}.csv'
 CSV_PATH = os.path.join(SAVE_DIR, CSV_FILENAME)
 
@@ -31,7 +31,7 @@ if 'x' not in df.columns or 'y' not in df.columns:
 # 🛠️ AXIS FIX (SWAP OR INVERT)
 # ==========================================
 # Toggle these to True/False to perfectly match your lab's visual orientation
-SWAP_X_AND_Y = True  # Swaps X and Y axes 
+SWAP_X_AND_Y = False  # Swaps X and Y axes 
 INVERT_X = False     # Flips left/right
 INVERT_Y = False     # Flips up/down
 
