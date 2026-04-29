@@ -5,6 +5,7 @@ Library of Distributed Control Laws for Swarm Robotics.
 """
 
 import numpy as np
+import math
 
 class BaseControlLaw:
     """
@@ -210,5 +211,91 @@ class T2DimensionAwareFlocking(BaseControlLaw):
                 clearance = 0.001
                 
             u_x += -alpha * dx + beta * (sign_dx / clearance)
+            
+        return u_x, u_y
+
+class TangentMappingFlocking(BaseControlLaw):
+    """
+    Based on Fedele, D'Alfonso, Chen (2025).
+    Transforms agents into a virtual tangent frame (F_v), applies finite-time
+    convergence to the path (Eq 12), and flocks along the tangent (Eq 11).
+    """
+    def compute(self, robot_state, neighbors, traj_ref, params):
+        if traj_ref is None: return 0.0, 0.0
+            
+        x_B = robot_state['xB']
+        y_B = robot_state['yB']
+        
+        # Reference trajectory data
+        r_x, r_y, r_dot_x, r_dot_y = traj_ref
+        
+        # Paper Parameters (Example 1 uses alpha=1.0, rho=1.0, mu=0.4)
+        rho = params.get('rho', 1.0)      
+        alpha = params.get('alpha', 1.0)  
+        beta = params.get('beta', 1.0)    
+        mu = params.get('mu', 0.4)        # Fractional power for finite-time convergence
+        safe_dist = params.get('safe_dist', 0.30) 
+        
+        # Get the angular velocity of the reference trajectory
+        # For a circle, this is exactly traj_w.
+        theta_dot = params.get('traj_w', 0.12)
+        
+        # --- STEP 1: Compute Diffeomorphism (Real to Virtual Frame) ---
+        # 1a. Calculate the angle of the tangent line
+        theta = math.atan2(r_dot_y, r_dot_x)
+        c_th, s_th = math.cos(theta), math.sin(theta)
+        
+        # 1b. Real world errors
+        e_x = x_B - r_x
+        e_y = y_B - r_y
+        
+        # 1c. Rotate into virtual frame (xi along tangent, zeta perpendicular)
+        xi_i = c_th * e_x + s_th * e_y
+        zeta_i = -s_th * e_x + c_th * e_y
+        
+        # Map neighbors into virtual frame
+        xi_neighbors = []
+        for nid, n_pos in neighbors.items():
+            n_ex = n_pos['x'] - r_x
+            n_ey = n_pos['y'] - r_y
+            xi_j = c_th * n_ex + s_th * n_ey
+            xi_neighbors.append(xi_j)
+            
+        # --- STEP 2: Virtual Control Laws (Eq 11 & Eq 12) ---
+        
+        # Modified Eq 12: Zeta-axis (Perpendicular to curve) - Proportional Convergence
+        K = params.get('K', 0.8)
+        
+        if abs(zeta_i) < 0.02:
+            u_zeta = 0.0
+        else:
+            u_zeta = -K * zeta_i
+            
+        # Eq 11: Xi-axis (Along the tangent curve) - Flocking
+        u_xi = -rho * xi_i
+        
+        for xi_j in xi_neighbors:
+            dx = xi_i - xi_j
+            
+            # Hardware Barrier Certificate (Upgraded from pure Eq 11 for safety)
+            sign_dx = 1.0 if dx == 0.0 else np.sign(dx)
+            clearance = abs(dx) - safe_dist
+            if clearance <= 0.001: clearance = 0.001
+                
+            raw_rep = beta * (sign_dx / clearance)
+            clipped_rep = np.clip(raw_rep, -1.0, 1.0)
+            
+            u_xi += -alpha * dx + clipped_rep
+            
+        # --- STEP 3: Inverse Diffeomorphism (Algorithm 1, Step 4) ---
+        # Maps u_xi and u_zeta back to real X,Y forces, accounting for 
+        # the frame rotation (Coriolis effect) and feedforward velocity.
+        
+        u_x = (c_th * u_xi) - (s_th * u_zeta) - (theta_dot * e_y) + r_dot_x
+        u_y = (s_th * u_xi) + (c_th * u_zeta) + (theta_dot * e_x) + r_dot_y
+        
+        # Final Force Deadband
+        if abs(u_x) < 0.05 and abs(u_y) < 0.05:
+            return 0.0, 0.0
             
         return u_x, u_y

@@ -181,8 +181,9 @@ import itertools
 
 def plot_all_perspectives(csv_files=['tb1_fleet_tracking_results.csv', 
                                      'tb2_fleet_tracking_results.csv', 
-                                     'tb3_fleet_tracking_results.csv',
-                                     'tb7_fleet_tracking_results.csv']):
+                                     'tb3_fleet_tracking_results.csv'
+                                     #'tb7_fleet_tracking_results.csv'
+                                     ]):
     
     BURGER_RADIUS = 0.178 / 2  # 178mm diameter Burger footprint
     colors = ['red', 'blue', 'orange', 'purple', 'cyan']
@@ -198,23 +199,23 @@ def plot_all_perspectives(csv_files=['tb1_fleet_tracking_results.csv',
                 fontweight='bold', ha='center', va='bottom')
 
     # Create the 5 main figures with 1x4 subplots (optimized for 4 robots)
-    fig1, axes1 = plt.subplots(1, 4, figsize=(32, 8))
+    fig1, axes1 = plt.subplots(1, 3, figsize=(32, 8))
     fig1.canvas.manager.set_window_title('Lab Floor Views')
     fig1.suptitle('Lab Floor View (Fixed $3\text{m} \\times 3\text{m}$ Quadrant) - All Perspectives', fontsize=16, fontweight='bold')
 
-    fig2, axes2 = plt.subplots(1, 4, figsize=(32, 8))
+    fig2, axes2 = plt.subplots(1, 3, figsize=(32, 8))
     fig2.canvas.manager.set_window_title('Detailed Trajectories')
     fig2.suptitle('Detailed Trajectory Comparison - All Perspectives', fontsize=16, fontweight='bold')
 
-    fig3, axes3 = plt.subplots(1, 4, figsize=(32, 6))
+    fig3, axes3 = plt.subplots(1, 3, figsize=(32, 6))
     fig3.canvas.manager.set_window_title('RMSE Analysis')
     fig3.suptitle('RMSE Tracking over Time - All Perspectives', fontsize=16, fontweight='bold')
 
-    fig4, axes4 = plt.subplots(1, 4, figsize=(32, 6))
+    fig4, axes4 = plt.subplots(1, 3, figsize=(32, 6))
     fig4.canvas.manager.set_window_title('Inter-Agent Distances (EKF)')
     fig4.suptitle('Inter-Agent Distance (EKF Estimated) - All Perspectives', fontsize=16, fontweight='bold')
 
-    fig5, axes5 = plt.subplots(1, 4, figsize=(32, 6))
+    fig5, axes5 = plt.subplots(1, 3, figsize=(32, 6))
     fig5.canvas.manager.set_window_title('Inter-Agent Distances (GT)')
     fig5.suptitle('Inter-Agent Distance (OptiTrack Ground Truth) - All Perspectives', fontsize=16, fontweight='bold')
 

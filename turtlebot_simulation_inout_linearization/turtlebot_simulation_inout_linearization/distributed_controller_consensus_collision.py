@@ -23,7 +23,8 @@ from turtlebot_simulation_inout_linearization.control_strategies import (
     DynamicTrajectory, 
     AnisotropicEllipse,
     T1PointMassFlocking,
-    T2DimensionAwareFlocking
+    T2DimensionAwareFlocking,
+    TangentMappingFlocking
 )
 
 class DistributedControllerOptitrack(Node):
@@ -54,7 +55,8 @@ class DistributedControllerOptitrack(Node):
             'dynamic_trajectory': DynamicTrajectory(),
             'anisotropic_ellipse': AnisotropicEllipse(),
             't1_flocking':T1PointMassFlocking(),
-            't2_flocking':T2DimensionAwareFlocking()
+            't2_flocking':T2DimensionAwareFlocking(),
+            'tangent_mapping': TangentMappingFlocking()
         }
         
         if mode_name not in self.strategies:
@@ -72,7 +74,7 @@ class DistributedControllerOptitrack(Node):
             ('traj_radius', 0.8), ('traj_w', 0.12),
             ('m11', 1.0), ('m22', 1.0), ('is_rotating', True), ('ellipse_alpha', 0.0),
             ('b', 0.1), ('max_v', 0.18), ('max_w', 1.5),
-            ('K', 2.0), ('y_bar', 0.0), ('safe_dist', 0.25) # <--- ADDED HERE
+            ('K', 2.0), ('y_bar', 0.0), ('safe_dist', 0.25)
         ]
         for name, default in params_to_declare:
             self.declare_parameter(name, default)
@@ -204,8 +206,7 @@ class DistributedControllerOptitrack(Node):
             'ellipse_alpha': self.get_parameter('ellipse_alpha').value,
             'K': self.get_parameter('K').value,                 # <--- ADDED HERE
             'y_bar': self.get_parameter('y_bar').value,         # <--- ADDED HERE
-            'safe_dist': self.get_parameter('safe_dist').value  # <--- ADDED HERE
-        }
+            'safe_dist': self.get_parameter('safe_dist').value        }
 
     def control_loop(self):
         now = self.get_clock().now().nanoseconds / 1e9

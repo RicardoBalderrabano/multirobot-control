@@ -5,7 +5,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     # Define the robots in your swarm
-    robot_namespaces = ['tb1', 'tb2','tb3','tb7']
+    robot_namespaces = ['tb1', 'tb2','tb3']
     
     # MODIFICATION 1: Put your actual package name here
     my_package_name = 'my_turtlebot_realFirst' # <--- CHANGE THIS 

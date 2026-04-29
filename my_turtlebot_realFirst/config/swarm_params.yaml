@@ -4,7 +4,7 @@
     # 1. MAIN SWITCH
     # ==========================================
     # Options: 'consensus_collision', 'absolute_goal', 'dynamic_trajectory', 'anisotropic_ellipse'
-    control_mode: 't1_flocking'
+    control_mode: 'tangent_mapping'
     
     # Options: 'circle', 'figure8'
     traj_type: 'circle'
@@ -13,8 +13,8 @@
     # 2. COMMON SWARM GAINS
     # ==========================================
     alpha: 1.0    # Cohesion
-    beta: 2.0    # Dispersion (0.25 = 0.5m triangle)
-    rho: 3.0      # Goal/Trajectory Tracking Pull
+    beta: 0.25    # Dispersion (0.25 = 0.5m triangle)
+    rho: 1.0      # Goal/Trajectory Tracking Pull
     
     # ==========================================
     # 3. MODE-SPECIFIC PARAMETERS
@@ -42,6 +42,7 @@
     max_v: 0.18
     max_w: 1.5
 
-    K: 2.0                 # <--- ADDED HERE
+    K: 0.7                 # <--- ADDED HERE
     y_bar: 1.0           # <--- ADDED HERE
-    safe_dist: 0.30         # <--- ADDED HERE
+    safe_dist: 0.25         # <--- ADDED HERE
+    

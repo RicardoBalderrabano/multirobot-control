@@ -26,7 +26,8 @@ from my_turtlebot_realFirst.control_strategies import (
     DynamicTrajectory, 
     AnisotropicEllipse,
     T1PointMassFlocking,
-    T2DimensionAwareFlocking
+    T2DimensionAwareFlocking,
+    TangentMappingFlocking
 )
 
 class DistributedControllerOptitrack(Node):
@@ -53,7 +54,8 @@ class DistributedControllerOptitrack(Node):
             'dynamic_trajectory': DynamicTrajectory(),
             'anisotropic_ellipse': AnisotropicEllipse(),
             't1_flocking':T1PointMassFlocking(),
-            't2_flocking':T2DimensionAwareFlocking()
+            't2_flocking':T2DimensionAwareFlocking(),
+            'tangent_mapping': TangentMappingFlocking()
         }
         
         if mode_name not in self.strategies:
@@ -182,7 +184,7 @@ class DistributedControllerOptitrack(Node):
             'ellipse_alpha': self.get_parameter('ellipse_alpha').value,
             'K': self.get_parameter('K').value,                 # <--- ADDED HERE
             'y_bar': self.get_parameter('y_bar').value,         # <--- ADDED HERE
-            'safe_dist': self.get_parameter('safe_dist').value  # <--- ADDED HERE
+            'safe_dist': self.get_parameter('safe_dist').value
         }
 
     def control_loop(self):
