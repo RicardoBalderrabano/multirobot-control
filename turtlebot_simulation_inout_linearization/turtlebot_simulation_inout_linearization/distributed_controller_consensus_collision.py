@@ -24,7 +24,8 @@ from turtlebot_simulation_inout_linearization.control_strategies import (
     AnisotropicEllipse,
     T1PointMassFlocking,
     T2DimensionAwareFlocking,
-    TangentMappingFlocking
+    TangentMappingFlocking,
+    DynamicTangentMappingFlocking
 )
 
 class DistributedControllerOptitrack(Node):
@@ -56,7 +57,8 @@ class DistributedControllerOptitrack(Node):
             'anisotropic_ellipse': AnisotropicEllipse(),
             't1_flocking':T1PointMassFlocking(),
             't2_flocking':T2DimensionAwareFlocking(),
-            'tangent_mapping': TangentMappingFlocking()
+            'tangent_mapping': TangentMappingFlocking(),
+            'tangent_sine':DynamicTangentMappingFlocking()
         }
         
         if mode_name not in self.strategies:
@@ -74,7 +76,11 @@ class DistributedControllerOptitrack(Node):
             ('traj_radius', 0.8), ('traj_w', 0.12),
             ('m11', 1.0), ('m22', 1.0), ('is_rotating', True), ('ellipse_alpha', 0.0),
             ('b', 0.1), ('max_v', 0.18), ('max_w', 1.5),
-            ('K', 2.0), ('y_bar', 0.0), ('safe_dist', 0.25)
+            ('K', 2.0), ('y_bar', 0.0), ('safe_dist', 0.25),
+            ('traj_amplitude', 1.0), 
+            ('traj_frequency', 1.5), 
+            ('traj_v_x', 0.10),
+            ('group_members', ['tb1', 'tb2', 'tb3']) # Default fallback
         ]
         for name, default in params_to_declare:
             self.declare_parameter(name, default)
@@ -175,23 +181,51 @@ class DistributedControllerOptitrack(Node):
         }
 
     def get_trajectory_reference(self, t):
-        c_x = self.get_parameter('traj_center_x').value
-        c_y = self.get_parameter('traj_center_y').value
-        R = self.get_parameter('traj_radius').value
-        w = self.get_parameter('traj_w').value
+            c_x = self.get_parameter('traj_center_x').value
+            c_y = self.get_parameter('traj_center_y').value
+            R = self.get_parameter('traj_radius').value
+            w = self.get_parameter('traj_w').value
 
-        if self.traj_type == 'figure8':
-            r_x = c_x + (R / 2.0) * np.sin(2 * w * t)
-            r_y = c_y + 1.25 * np.sin(w * t)
-            r_dot_x = R * w * np.cos(2 * w * t)
-            r_dot_y = 1.25 * w * np.cos(w * t)
-        else:
-            r_x = c_x + R * np.cos(w * t)
-            r_y = c_y + R * np.sin(w * t)
-            r_dot_x = -R * w * np.sin(w * t)
-            r_dot_y =  R * w * np.cos(w * t)
-            
-        return r_x, r_y, r_dot_x, r_dot_y
+            if self.traj_type == 'sine':
+                # Pull specific parameters for the sine wave
+                A = self.get_parameter('traj_amplitude').value
+                B = self.get_parameter('traj_frequency').value
+                v = self.get_parameter('traj_v_x').value # We keep this name but apply it to Y
+                
+                # --- ROTATED 90 DEGREES (Moving along Y-axis) ---
+                r_y = c_y + v * t
+                r_x = c_x + A * np.sin(B * v * t)
+                
+                r_dot_y = v
+                r_dot_x = A * B * v * np.cos(B * v * t)
+                
+                # Dynamic curvature (theta_dot) for Y-axis propagation
+                numerator = A * (B**2) * v * np.sin(B * v * t) # Note: Positive sign!
+                denominator = 1 + (A * B * np.cos(B * v * t))**2
+                theta_dot = numerator / denominator
+
+            elif self.traj_type == 'figure8':
+                r_x = c_x + (R / 2.0) * np.sin(2 * w * t)
+                r_y = c_y + 1.25 * np.sin(w * t)
+                r_dot_x = R * w * np.cos(2 * w * t)
+                r_dot_y = 1.25 * w * np.cos(w * t)
+                
+                # Dynamic curvature (theta_dot) for Figure-8
+                r_ddot_x = -2 * R * (w**2) * np.sin(2 * w * t)
+                r_ddot_y = -1.25 * (w**2) * np.sin(w * t)
+                theta_dot = (r_dot_x * r_ddot_y - r_dot_y * r_ddot_x) / (r_dot_x**2 + r_dot_y**2 + 1e-6) # 1e-6 prevents div by zero
+
+            else: # 'circle'
+                r_x = c_x + R * np.cos(w * t)
+                r_y = c_y + R * np.sin(w * t)
+                r_dot_x = -R * w * np.sin(w * t)
+                r_dot_y =  R * w * np.cos(w * t)
+                
+                # For a perfect circle, the angular velocity of the tangent is a constant: w
+                theta_dot = w
+                
+            # Return 5 variables as an array so the controller can unpack them cleanly
+            return [r_x, r_y, r_dot_x, r_dot_y, theta_dot]
 
     def get_current_params_dict(self):
         return {
@@ -206,7 +240,9 @@ class DistributedControllerOptitrack(Node):
             'ellipse_alpha': self.get_parameter('ellipse_alpha').value,
             'K': self.get_parameter('K').value,                 # <--- ADDED HERE
             'y_bar': self.get_parameter('y_bar').value,         # <--- ADDED HERE
-            'safe_dist': self.get_parameter('safe_dist').value        }
+            'safe_dist': self.get_parameter('safe_dist').value,             
+            'group_members': self.get_parameter('group_members').value
+            }
 
     def control_loop(self):
         now = self.get_clock().now().nanoseconds / 1e9

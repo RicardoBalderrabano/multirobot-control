@@ -21,7 +21,7 @@ from launch_ros.actions import Node, PushRosNamespace
 from launch.actions import GroupAction
 
 from ament_index_python.packages import get_package_share_directory
-
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 # ==============================================================================
 # DIGITAL TWIN INITIALIZATION (OPTITRACK SNIFFER)
 # ==============================================================================
@@ -72,10 +72,10 @@ def get_real_robot_poses(robot_names, timeout=3.0):
     
     # Fallback dictionary in case OptiTrack is off or a robot is missing
     defaults = {
-        'tb1': {'x':  1.0, 'y':  0.0, 'yaw': 0.0},
-        'tb2': {'x': -1.5, 'y':  -2.0, 'yaw': 0.0},
-        'tb3': {'x':  2.0, 'y':  -1.0, 'yaw': 0.0}
-        #'tb7': {'x':  0.0, 'y': -0.5, 'yaw': 0.0}
+        'tb1': {'x':  -0.75, 'y':  -1.8, 'yaw': 1.57},
+        'tb2': {'x': -0.75, 'y':  -2.2, 'yaw': 1.57},
+        'tb3': {'x':  0.75, 'y':  -1.8, 'yaw': 1.57},
+        'tb7': {'x':  0.75, 'y': -2.2, 'yaw': 1.57}
     }
     
     results = []
@@ -179,10 +179,16 @@ def _make_namespaced_bridge_yaml(original_yaml_path, namespace):
     tmp_file.close()
     return tmp_file.name
 
-
 def generate_launch_description():
-    use_sim_time = LaunchConfiguration('use_sim_time', default='true')
+    # 1. DECLARE LAUNCH ARGUMENTS
+    use_sim_time_arg = DeclareLaunchArgument('use_sim_time', default_value='true')
+    control_mode_arg = DeclareLaunchArgument('control_mode', default_value='tangent_mapping')
+    traj_type_arg = DeclareLaunchArgument('traj_type', default_value='circle')
+    use_groups_arg = DeclareLaunchArgument('use_groups', default_value='false')
 
+    # ==========================================================
+    # THE MISSING PATH DEFINITIONS (Must be before launch_setup)
+    # ==========================================================
     try:
         tb3_gazebo_dir = get_package_share_directory('turtlebot3_gazebo')
     except Exception:
@@ -195,113 +201,135 @@ def generate_launch_description():
 
     world_file = os.path.join(tb3_gazebo_dir, 'worlds', 'empty_world.world')
     turtlebot_model_dir = os.path.join(tb3_gazebo_dir, 'models', 'turtlebot3_burger')
+    
+    # THESE ARE THE VARIABLES IT WAS LOOKING FOR:
     model_sdf_path = os.path.join(turtlebot_model_dir, 'model.sdf')
     bridge_yaml_path = os.path.join(tb3_gazebo_dir, 'params', 'turtlebot3_burger_bridge.yaml')
+    # ==========================================================
 
-    # ALL 4 ROBOTS EXPLICITLY DEFINED HERE via the Sniffer
-    robot_names_list = ['tb1', 'tb2', 'tb3']
+    robot_names_list = ['tb1', 'tb2', 'tb3', 'tb7']
     robots = get_real_robot_poses(robot_names_list)
 
     ld = LaunchDescription()
+    
+    ld.add_action(use_sim_time_arg)
+    ld.add_action(control_mode_arg)
+    ld.add_action(traj_type_arg)
+    ld.add_action(use_groups_arg)
 
+    # Launch Gazebo
     gzserver_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(ros_gz_sim_dir, 'launch', 'gz_sim.launch.py')
-        ),
-        launch_arguments={
-            'gz_args': f'-r -s -v4 {world_file}',
-            'on_exit_shutdown': 'true'
-        }.items()
+        PythonLaunchDescriptionSource(os.path.join(ros_gz_sim_dir, 'launch', 'gz_sim.launch.py')),
+        launch_arguments={'gz_args': f'-r -s -v4 {world_file}', 'on_exit_shutdown': 'true'}.items()
     )
     ld.add_action(gzserver_launch)
 
     gzclient_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(ros_gz_sim_dir, 'launch', 'gz_sim.launch.py')
-        ),
+        PythonLaunchDescriptionSource(os.path.join(ros_gz_sim_dir, 'launch', 'gz_sim.launch.py')),
         launch_arguments={'gz_args': '-g -v4'}.items()
     )
     ld.add_action(gzclient_launch)
 
-    # --- Spawn robots AND Controllers ---
-    for robot in robots:
-        ns = robot['name']
+    # 2. THE OPAQUE FUNCTION
+    def launch_setup(context, *args, **kwargs):
+        use_groups = LaunchConfiguration('use_groups').perform(context).lower() == 'true'
+        current_control_mode = LaunchConfiguration('control_mode').perform(context)
+        current_traj_type = LaunchConfiguration('traj_type').perform(context)
+        
+        spawn_actions = []
 
-        bridge_yaml_namespaced = _make_namespaced_bridge_yaml(bridge_yaml_path, ns)
-        namespaced_sdf = _make_namespaced_sdf(model_sdf_path, ns)
+        for robot in robots:
+            ns = robot['name']
 
-        robot_group = GroupAction([
-            PushRosNamespace(ns),
+            # Now it can safely access these variables from the outer scope!
+            bridge_yaml_namespaced = _make_namespaced_bridge_yaml(bridge_yaml_path, ns)
+            namespaced_sdf = _make_namespaced_sdf(model_sdf_path, ns)
 
-            # 1. Spawn Robot
-            Node(
-                package='ros_gz_sim',
-                executable='create',
-                name=f'{ns}_create',
-                arguments=[
-                    '-name', ns,
-                    '-file', namespaced_sdf,
-                    '-x', str(robot['x']),
-                    '-y', str(robot['y']),
-                    '-z', '0.01',
-                    '-Y', str(robot['yaw'])
-                ],
-                output='screen'
-            ),
+            # =========================================================
+            # DYNAMIC GROUP & OFFSET LOGIC
+            # =========================================================
+            if use_groups:
+                if ns in ['tb1', 'tb2']:
+                    assigned_group = ['tb1', 'tb2']
+                    assigned_center_x = -0.75   # <-- Shift Gamma 1 UP by 1 meter
+                elif ns in ['tb3', 'tb7']:    # (Fixed tb4 to tb7 to match your robots)
+                    assigned_group = ['tb3', 'tb7']
+                    assigned_center_x = 0.75  # <-- Shift Gamma 2 DOWN by 1 meter
+                else:
+                    assigned_group = [ns]
+                    assigned_center_y = 0.0
+            else:
+                assigned_group = robot_names_list 
+                assigned_center_y = 0.0
+                assigned_center_x = 0.0  
+            # =========================================================
 
-            # 2. Bridge
-            Node(
-                package='ros_gz_bridge',
-                executable='parameter_bridge',
-                name=f'{ns}_bridge',
-                parameters=[{'config_file': bridge_yaml_namespaced}],
-                output='screen'
-            ),
-            
-            # 3. SWARM CONTROLLER NODE
-            Node(
-                package='turtlebot_simulation_inout_linearization',
-                executable='distributed_controller_consensus_collision',
-                name=f'{ns}_controller',
-                parameters=[{
-                    'robot_namespace': ns,
-                    'pose_topic': f'/{ns}/ground_truth_pose',
-                    'sim_mode': False,            
-                    'use_twist_msg': True,        
-                    'control_mode': 'tangent_mapping',  # CHANGE FOR THE STRATEGIC
-                    'traj_type': 'circle',
-                    'alpha': 1.0,
-                    'beta':0.25,
-                    'rho': 1.0,
-                    'goal_x': 0.0,
-                    'goal_y': 0.0,
-                    'traj_center_x': 0.0,
-                    'traj_center_y': 0.0,
-                    'traj_radius': 1.0,
-                    'traj_w': 0.08,
-                    'm11': 1.0,
-                    'm22': 1.0,
-                    'is_rotating': False,
-                    'ellipse_alpha': 0.0,
-                    'b': 0.1,
-                    'max_v': 0.18,
-                    'max_w': 1.5,
-                    'K': 0.8,                 # <--- ADDED HERE
-                    'y_bar': 1.0,             # <--- ADDED HERE
-                    'safe_dist': 0.2
-                }],
-                output='screen'
-            ),
+            robot_group = GroupAction([
+                PushRosNamespace(ns),
 
-            # 4. MOCK EKF OBSERVER NODE
-            Node(
-                package='turtlebot_simulation_inout_linearization',
-                executable='mock_ekf_node',
-                name=f'{ns}_mock_ekf',
-                parameters=[{'observer_namespace': ns}],
-                output='screen'
-            )
-        ])
-        ld.add_action(robot_group)
+                Node(
+                    package='ros_gz_sim',
+                    executable='create',
+                    name=f'{ns}_create',
+                    arguments=[
+                        '-name', ns, '-file', namespaced_sdf,
+                        '-x', str(robot['x']), '-y', str(robot['y']),
+                        '-z', '0.01', '-Y', str(robot['yaw'])
+                    ],
+                    output='screen'
+                ),
+
+                Node(
+                    package='ros_gz_bridge',
+                    executable='parameter_bridge',
+                    name=f'{ns}_bridge',
+                    parameters=[{'config_file': bridge_yaml_namespaced}],
+                    output='screen'
+                ),
+                
+                Node(
+                    package='turtlebot_simulation_inout_linearization',
+                    executable='distributed_controller_consensus_collision',
+                    name=f'{ns}_controller',
+                    parameters=[{
+                        'robot_namespace': ns,
+                        'pose_topic': f'/{ns}/ground_truth_pose',
+                        'sim_mode': False,            
+                        'use_twist_msg': True,        
+                        
+                        'control_mode': current_control_mode,  
+                        'traj_type': current_traj_type,
+                        
+                        'traj_amplitude': 0.6,           
+                        'traj_frequency': 1.5,           
+                        'traj_v_x': 0.10,                
+                        
+                        'alpha': 1.0, 'beta': 0.25, 'rho': 1.0,
+                        'goal_x': 0.0, 'goal_y': 0.0,
+                        'traj_center_x': assigned_center_x, 'traj_center_y': -1.8,
+                        'traj_radius': 1.0, 'traj_w': 0.08,
+                        'm11': 1.0, 'm22': 1.0, 'is_rotating': False,
+                        'ellipse_alpha': 0.0, 'b': 0.1,
+                        'max_v': 0.18, 'max_w': 1.5,
+                        'K': 0.8, 'y_bar': 1.0, 'safe_dist': 0.2,
+                        
+                        'group_members': assigned_group 
+                    }],
+                    output='screen'
+                ),
+
+                Node(
+                    package='turtlebot_simulation_inout_linearization',
+                    executable='mock_ekf_node',
+                    name=f'{ns}_mock_ekf',
+                    parameters=[{'observer_namespace': ns}],
+                    output='screen'
+                )
+            ])
+            spawn_actions.append(robot_group)
+
+        return spawn_actions
+
+    ld.add_action(OpaqueFunction(function=launch_setup))
 
     return ld

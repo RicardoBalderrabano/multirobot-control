@@ -10,7 +10,7 @@ import sys
 # CONFIGURATION
 # ==========================================
 SAVE_DIR = '/home/ricardo/multirobot_ws/src/multirobot_control/turtlebot_simulation_inout_linearization/plotting'
-MODE_NAME = 'tangent_mapping' # Updated to match your current test
+MODE_NAME = 'tangent_sine' # Updated to match your current test
 CSV_FILENAME = f'swarm_effort_{MODE_NAME}.csv'
 CSV_PATH = os.path.join(SAVE_DIR, CSV_FILENAME)
 
